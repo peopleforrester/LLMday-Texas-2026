@@ -10,19 +10,24 @@
 
 The MLOps pipeline already implements most of what teams are trying to reinvent for agentic systems. Map the stages directly to the controls you would want around an autonomous agent and the structure lines up almost one-to-one. The Eight Guardrails Framework is the implementation; the Agentic Covenants Matrix is the structural map.
 
+The Agentic Covenants Framework lives in its own repo: [github.com/peopleforrester/agentic-covenants](https://github.com/peopleforrester/agentic-covenants). This LLMday repo references that framework rather than reproducing it.
+
 ## Repo contents
 
-- `llmday-austin-sdlc-guardrails-submission.md` — the published article (Opinion piece, ready for Micropub)
+- `mlops-as-agentic-guardrail.md` — the published article (Opinion piece, ready for Micropub)
 - `docs/outline.md` — 30-minute talk outline (in progress)
-- `PROJECT_STATE.md` — current state and what comes next
+- `CLAUDE.md` — project context and writing standards for AI-assisted edits
+- `PROJECT_STATE.md` — current status and what comes next
 
-## Source materials drawn from sibling repos
+## Related work
 
-- `events/claude-deleted-my-cluster-2026/context/` — forensic evidence and incident references
-- `events/DevOpsDays-Atlanta-2026/` — same incident in Ignite format, three-layer guardrails implementation
-- `events/kubeauto-ai-day/docs/EIGHT-GUARDRAILS.md` — full Eight Guardrails framework reference
-- `events/kubeauto-ai-day/collateral/slide-outline.md` — slide patterns reusable for the Eight Guardrails section
+- The Agentic Covenants Framework: [github.com/peopleforrester/agentic-covenants](https://github.com/peopleforrester/agentic-covenants) (canonical source for the matrix and prevention model; this repo references it rather than reproducing it).
+- The cluster deletion incident referenced in the article: covered as an Ignite talk at DevOpsDays Atlanta 2026 and as a CNCF KubeAuto AI Day Europe session on the Eight Guardrails Framework.
 
 ## Workflow
 
 Work on `staging`. Open a PR to merge `staging` into `main`. Direct pushes to `main` are blocked by branch protection.
+
+## License
+
+Article and supporting prose in this repo are licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Attribution: Michael R Forrester, 2026. See `LICENSE` for the full text.

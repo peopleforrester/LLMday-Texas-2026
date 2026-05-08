@@ -15,7 +15,7 @@ Thumbs.db
 # Logs
 *.log
 
-# Secrets
+# Secrets and credentials
 .env
 .env.local
 .env.*.local
@@ -23,6 +23,6 @@ Thumbs.db
 *.key
 
 # Presentation binaries (host externally or use Git LFS)
+# Note: *.key already excluded above; covers both SSH keys and Apple Keynote files.
 *.pptx
-*.key
 *.keynote
