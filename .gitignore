@@ -1,0 +1,28 @@
+# ABOUTME: Gitignore for the LLMday Texas 2026 talk repo.
+# ABOUTME: Covers editor, OS, and presentation binary artifacts.
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Presentation binaries (host externally or use Git LFS)
+*.pptx
+*.key
+*.keynote
