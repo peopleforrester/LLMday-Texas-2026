@@ -9,7 +9,7 @@ This is a stub. The full outline has not been drafted yet. The notes below captu
 
 1. The incident hook (etcd force-refresh into netplan wipe across all nodes).
 2. The wrong lesson (humans-in-the-loop) versus the right lesson (deterministic gates with autonomous operation inside the boundary).
-3. The Agentic Covenants Matrix as recognition, not introduction. Six MLOps stages mapped to six covenants. (See the article for the canonical mapping.)
+3. The Agentic Covenants Matrix as recognition, not introduction. Six MLOps stages mapped to six covenants. The matrix and broader Agentic Covenants Framework are maintained at `github.com/peopleforrester/agentic-covenants`. Reference that repo on stage and in slides; do not lift content from it into this repo. (See the article for the canonical mapping as it appears in this talk.)
 4. The Eight Guardrails Framework as the concrete implementation across three enforcement layers (Claude Code pre-tool-use hooks, Git hooks, Kubernetes infrastructure controls).
 5. The failure chain mapped to the gate that would have stopped each step.
 6. Gap checklist takeaway so the audience leaves with a usable artifact.

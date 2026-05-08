@@ -11,6 +11,7 @@ This repo holds the talk artifacts for the LLMday Austin 2026 talk "Your MLOps P
 ## What does NOT live here
 
 - The Eight Guardrails framework reference, the cluster deletion forensic evidence, and the related Ignite-format presentation are in sibling repos. See `README.md` for paths. Do not duplicate that material here; reference it.
+- The Agentic Covenants Framework lives at `github.com/peopleforrester/agentic-covenants`. **Reference it, but do not pull content from it into this repo.** The framework repo is the canonical source of the matrix and prevention model; this repo points at it. If you find yourself wanting to copy text or definitions from that repo into LLMday materials, stop and link instead.
 
 ## Writing standards for the article and any derivative content
 

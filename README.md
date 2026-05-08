@@ -10,6 +10,8 @@
 
 The MLOps pipeline already implements most of what teams are trying to reinvent for agentic systems. Map the stages directly to the controls you would want around an autonomous agent and the structure lines up almost one-to-one. The Eight Guardrails Framework is the implementation; the Agentic Covenants Matrix is the structural map.
 
+The Agentic Covenants Framework lives in its own repo: [github.com/peopleforrester/agentic-covenants](https://github.com/peopleforrester/agentic-covenants). This LLMday repo references that framework rather than reproducing it.
+
 ## Repo contents
 
 - `llmday-austin-sdlc-guardrails-submission.md` — the published article (Opinion piece, ready for Micropub)
