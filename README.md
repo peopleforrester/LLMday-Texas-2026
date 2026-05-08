@@ -14,7 +14,7 @@ The Agentic Covenants Framework lives in its own repo: [github.com/peopleforrest
 
 ## Repo contents
 
-- `llmday-austin-sdlc-guardrails-submission.md` — the published article (Opinion piece, ready for Micropub)
+- `mlops-as-agentic-guardrail.md` — the published article (Opinion piece, ready for Micropub)
 - `docs/outline.md` — 30-minute talk outline (in progress)
 - `CLAUDE.md` — project context and writing standards for AI-assisted edits
 - `PROJECT_STATE.md` — current status and what comes next
@@ -27,3 +27,7 @@ The Agentic Covenants Framework lives in its own repo: [github.com/peopleforrest
 ## Workflow
 
 Work on `staging`. Open a PR to merge `staging` into `main`. Direct pushes to `main` are blocked by branch protection.
+
+## License
+
+Article and supporting prose in this repo are licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Attribution: Michael R Forrester, 2026. See `LICENSE` for the full text.

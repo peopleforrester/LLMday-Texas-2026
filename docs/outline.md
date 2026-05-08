@@ -16,7 +16,7 @@ This is a stub. The full outline has not been drafted yet. The notes below captu
 
 ## Source materials to draw from
 
-- `../llmday-austin-sdlc-guardrails-submission.md` (this repo) — the published article and canonical mapping.
+- `../mlops-as-agentic-guardrail.md` (this repo) — the published article and canonical mapping.
 - `events/kubeauto-ai-day/docs/EIGHT-GUARDRAILS.md` — full Eight Guardrails framework.
 - `events/kubeauto-ai-day/collateral/slide-outline.md` — reusable slide patterns for the Three-Layer Guardrails diagram and Eight Guardrails table.
 - `events/DevOpsDays-Atlanta-2026/layer-1-git-ci/`, `layer-2-kubernetes/`, `layer-3-claude-hooks/` — concrete control implementations across the three layers.

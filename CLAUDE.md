@@ -4,7 +4,7 @@ This repo holds the talk artifacts for the LLMday Austin 2026 talk "Your MLOps P
 
 ## What lives here
 
-- `llmday-austin-sdlc-guardrails-submission.md` — the canonical article (Opinion piece) with the Agentic Covenants Matrix mapping. Ready for Micropub publication.
+- `mlops-as-agentic-guardrail.md` — the canonical article (Opinion piece) with the Agentic Covenants Matrix mapping. Ready for Micropub publication.
 - `docs/outline.md` — the 30-minute talk outline (in progress).
 - `PROJECT_STATE.md` — current status and remaining work.
 

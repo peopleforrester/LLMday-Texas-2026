@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Repository scaffolded and pushed to GitHub as `peopleforrester/LLMday-Texas-2026` (public). Article captured at `llmday-austin-sdlc-guardrails-submission.md` with the Agentic Covenants Matrix mapping integrated. 30-minute talk outline does NOT yet exist.
+Repository scaffolded and pushed to GitHub as `peopleforrester/LLMday-Texas-2026` (public). Article captured at `mlops-as-agentic-guardrail.md` with the Agentic Covenants Matrix mapping integrated. 30-minute talk outline does NOT yet exist.
 
 ## Talk Slot
 
