@@ -1,4 +1,4 @@
-# LLMday Austin Demo · Three-Layer Pipeline Guardrails
+# LLMday Austin Demo · Three-Layer Pipeline Guardrails (EKS Auto Mode)
 
 A live, scripted terminal demo for the talk *"Your MLOps Pipeline is your Agentic AI Guardrail"* delivered at LLMday Austin on May 12, 2026.
 
@@ -6,22 +6,56 @@ The demo shows three layers of an existing MLOps pipeline catching an AI agent t
 
 1. **Claude Code PreToolUse hook** — denies the dangerous tool call before execution
 2. **Git pre-commit hook** — rejects the agent's commit on a protected path
-3. **Kubernetes ValidatingAdmissionPolicy** — denies the agent's direct API call at the API server
+3. **Kubernetes ValidatingAdmissionPolicy** — denies the agent's direct API call at the EKS API server
 
-The agent dialogue is scripted (for predictable timing on stage). The enforcement at every layer is real.
+The agent dialogue is scripted (for predictable timing on stage). The enforcement at every layer is real. The cluster is a real **Amazon EKS Auto Mode** cluster running Kubernetes 1.33.
+
+The full build contract is at `../docs/SPEC.md` (v4.2).
+
+---
+
+## Prerequisites
+
+On Megumi (the laptop you'll present from):
+
+- AWS CLI v2 configured (`aws sts get-caller-identity` returns a valid identity)
+- `eksctl >= 0.225`
+- `kubectl >= 1.33`
+- `helm >= 3.18`
+- `git`, `bash`, `awk`, `jq`
+- An AWS region picked. Default: `us-east-2`.
+- IAM permissions sufficient to create EKS clusters and the IAM roles Auto Mode needs (`eksctl create cluster --enable-auto-mode` handles the boilerplate; you need the permission to create those resources).
 
 ---
 
 ## Quick start
 
 ```bash
-# Prerequisites: k3d, kubectl, git, bash, awk, jq
-bash setup.sh         # creates the k3d cluster, applies manifests, generates kubeconfig
-bash demo.sh          # runs the demo. Press SPACE at each beat transition.
-bash teardown.sh      # removes the cluster and cleans .local/
+cd <repo>/demo
+
+# 1) One-time tonight (12-15 min)
+bash provision-cluster.sh     # creates the EKS Auto Mode cluster, installs Falco + OTel
+
+# 2) Every time (~60 seconds)
+bash setup.sh                 # applies demo manifests, issues 1h agent token, verifies all 3 layers
+
+# 3) On stage
+bash demo.sh                  # press SPACE at each beat transition
+
+# 4) Between rehearsal runs (optional)
+bash reset.sh                 # re-hydrates iac-repo, refreshes the agent token
+
+# 5) After the talk (10 min, costs you nothing to run later)
+bash teardown.sh              # deletes the cluster + .local/
 ```
 
-That's it. The demo runs from this directory wherever the repo is cloned.
+Environment overrides:
+- `AWS_REGION` (default `us-east-2`)
+- `AWS_PROFILE`
+- `CLUSTER_NAME` (default `llmday-demo`)
+- `K8S_VERSION` (default `1.33`)
+- `TOKEN_TTL` (default `1h`)
+- `TYPE_DELAY_MS` (default `30` — speed up typing animation for rehearsal)
 
 ---
 
@@ -31,16 +65,18 @@ That's it. The demo runs from this directory wherever the repo is cloned.
 
 | Path | What it is |
 |---|---|
-| `setup.sh` | One-shot bootstrap: creates k3d cluster, applies manifests, generates kubeconfig, hydrates iac-repo |
-| `reset.sh` | Between-rehearsal-runs reset: refreshes the iac-repo and the token without rebuilding the cluster |
-| `teardown.sh` | Removes the cluster and deletes `.local/` |
-| `demo.sh` | The runner Michael executes on stage. Plays scripted dialogue, real enforcement |
+| `provision-cluster.sh` | One-time EKS Auto Mode + Helm install. Run tonight. |
+| `setup.sh` | Applies demo manifests to the existing cluster. Builds kubeconfigs. Verifies all three layers. |
+| `reset.sh` | Re-hydrates iac-repo and refreshes the agent token. Cluster stays up. |
+| `teardown.sh` | `eksctl delete cluster` + `.local/` cleanup. **Run only after the talk.** |
+| `demo.sh` | The runner Michael executes on stage. Plays scripted dialogue, real enforcement. |
 | `demo-runbook.md` | Speaker's printed runbook for stage |
 | `lib/` | bash primitives: typing animation, pause-on-spacebar, ANSI colors |
 | `dialogue/` | The three scripted beats, plus a JSON fixture for Beat 1 |
 | `claude-hooks/` | The PreToolUse hook script + reference settings.json |
 | `iac-repo-template/` | Template for the inner IaC repo that Beat 2 hits |
-| `manifests/` | All Kubernetes YAML applied by setup.sh |
+| `manifests/` | Kubernetes YAML applied to the EKS cluster |
+| `manifests/observability/` | Helm values files for Falco and OTel |
 
 ### Generated at setup time (gitignored)
 
@@ -48,12 +84,13 @@ Anything in `.local/`:
 
 | Path | What it is |
 |---|---|
-| `.local/kubeconfig` | Kubeconfig pointing at the agent's projected token |
-| `.local/agent-token` | 1-hour projected ServiceAccount token, refreshed by setup |
-| `.local/audit.log` | Tail of the K8s API server audit log |
-| `.local/iac-repo/` | Hydrated copy of `iac-repo-template/` with a real `.git/` directory and the pre-commit hook installed |
+| `.local/operator-kubeconfig` | Operator kubeconfig (uses AWS credentials via `aws eks get-token`) |
+| `.local/kubeconfig` | Agent kubeconfig (uses a K8s ServiceAccount projected token, **not** AWS creds) |
+| `.local/agent-token` | 1-hour projected ServiceAccount token, refreshed by `setup.sh`/`reset.sh` |
+| `.local/cluster-info.json` | Cached `aws eks describe-cluster` output |
+| `.local/iac-repo/` | Hydrated copy of `iac-repo-template/` with a real `.git/` and the pre-commit hook installed |
 
-The `.local/` directory is in `.gitignore`. Never check it in.
+The `.local/` directory is gitignored. Never check it in.
 
 ---
 
@@ -61,81 +98,32 @@ The `.local/` directory is in `.gitignore`. Never check it in.
 
 ### Beat 1 — Claude Code PreToolUse hook
 
-The agent is asked to ship model v1.3.0 to production. It tries the obvious thing: `kubectl set image deployment/model-server -n production`. The PreToolUse hook intercepts the tool call before execution, denies it, and returns a stderr explaining why.
+The agent is asked to ship model v1.3.0 to production. It tries `kubectl set image deployment/model-server -n production`. The PreToolUse hook intercepts the tool call before execution, denies it, and returns a stderr explaining why.
 
 **What fires:** `claude-hooks/pretool-use-block-prod.sh`
 
-The hook reads a tool-call JSON on stdin and exits with code 2 if the tool input matches one of three dangerous patterns: direct kubectl against production, direct registry mutation, or direct file edits on `infrastructure/production/`.
-
 ### Beat 2 — Git pre-commit hook
 
-Blocked from kubectl, the agent tries the IaC path. It edits `infrastructure/production/model-server.yaml` to bump the image tag and runs `git commit`. The pre-commit hook rejects the commit because the path is protected AND because the committer email is `claude-agent@anthropic.local` (non-human identity).
+Blocked from kubectl, the agent edits `infrastructure/production/model-server.yaml` and runs `git commit`. The pre-commit hook rejects the commit because the path is protected AND because the committer email is `claude-agent@anthropic.local`.
 
-**What fires:** `.local/iac-repo/.git/hooks/pre-commit` (copied from `iac-repo-template/hooks/pre-commit` at setup time)
-
-The hook checks each staged file against `PROTECTED_PATHS` and the configured user email. Either condition triggers an exit 1 with a stderr deny.
+**What fires:** `.local/iac-repo/.git/hooks/pre-commit` (copied from `iac-repo-template/hooks/pre-commit` at setup time, with an explicit `core.hooksPath` override that defeats any host-global hooks dir)
 
 ### Beat 3 — Kubernetes ValidatingAdmissionPolicy
 
-Out of local options, the agent bypasses the PreToolUse hook by writing the manifest to a file and applying it. The K8s API server itself denies the apply via a `ValidatingAdmissionPolicy` bound to the `production` namespace.
+The agent writes the manifest to a file and applies it via `kubectl`. The EKS API server denies the apply via a `ValidatingAdmissionPolicy` bound to the `production` namespace.
 
-**What fires:** `manifests/40-vap-production-guard.yaml`
+**What fires:** `manifests/40-vap-production-guard.yaml` (deployed by `setup.sh` to the EKS cluster)
 
-Native to K8s 1.30+. CEL-evaluated. No webhook, no controller. The policy denies writes to `production` from any `system:serviceaccount:` principal that isn't ArgoCD or the MLOps pipeline.
-
----
-
-## Running the demo
-
-### First time setup
-
-```bash
-bash setup.sh
-```
-
-Takes about 90 seconds. Verifies all three layers fire correctly when tested standalone. If any acceptance check fails, setup exits non-zero.
-
-### Running the demo
-
-```bash
-bash demo.sh
-```
-
-The runner prints a Claude Code-style banner, then waits for SPACE to begin Beat 1. Press SPACE between beats. Auto-pace within each beat (typing animations).
-
-### Faster typing for rehearsal
-
-```bash
-TYPE_DELAY_MS=10 bash demo.sh
-```
-
-### Skip beats during testing
-
-```bash
-bash demo.sh --resume-beat=2     # Start at Beat 2
-bash demo.sh --dry-run           # Print all dialogue, don't execute commands
-```
-
-### Between rehearsal runs
-
-```bash
-bash reset.sh                    # Refresh state, keep the cluster
-```
-
-### After the talk
-
-```bash
-bash teardown.sh
-```
+The deny is also visible in the CloudWatch tail in the bottom-right tmux pane.
 
 ---
 
 ## Architecture conventions
 
-- **Repo-relative paths:** Every script resolves `$DEMO_ROOT` as `$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)`. No hardcoded absolute paths.
-- **Ephemeral artifacts in `.local/`:** Anything generated by `setup.sh` lives in `.local/` and is gitignored.
-- **Layer isolation:** Each of the three layers can be tested standalone without running the full demo. See the acceptance criteria in the build spec.
-- **Real enforcement:** The hooks and policies are real bash scripts and real K8s resources. Only the agent's dialogue is scripted.
+- **Repo-relative paths.** Every script resolves `$DEMO_ROOT` as `$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)`. No hardcoded absolute paths.
+- **Ephemeral artifacts in `.local/`.** Anything generated by setup lives in `.local/` and is gitignored.
+- **Two kubeconfigs.** `operator-kubeconfig` uses AWS credentials (for `setup.sh`, `kubectl apply`, debugging). `kubeconfig` (the agent's) uses a short-lived ServiceAccount projected token (what `demo.sh` runs against).
+- **Real enforcement.** All three layers are real scripts and real K8s resources. Only the agent's dialogue is scripted.
 
 ---
 
@@ -148,17 +136,21 @@ This demo lives three of the Eight Guardrails. The other five are addressed by t
 3. ✅ **K8s admission policy** — demonstrated in Beat 3
 4. **IaC-only infrastructure changes** — referenced by Beat 2's protected paths
 5. **Least-privilege RBAC** — agent SA is scoped to `staging` only (see `manifests/20-rbac.yaml`)
-6. **Automated rollback** — ArgoCD pattern, mentioned on slide 8
-7. **Audit logging** — K8s API server audit log enabled via `manifests/audit-policy.yaml`
-8. **Tested in CI** — the hook scripts have unit tests in this repo (see `tests/`)
+6. **Automated rollback** — ArgoCD pattern, mentioned on the deck
+7. **Audit logging** — EKS audit log exported to CloudWatch by `provision-cluster.sh`
+8. **Tested in CI** — the hook scripts have unit tests (Layer 1 and Layer 2 are exercised standalone in `setup.sh`'s verify block)
 
 ---
 
 ## Troubleshooting
 
-**`setup.sh` fails on `k3d cluster create`**
+**`provision-cluster.sh` fails on `eksctl create cluster`**
 
-The cluster name `llmday-demo` may already exist. Run `k3d cluster delete llmday-demo` and try again, or run `bash teardown.sh` first.
+Check your AWS credentials (`aws sts get-caller-identity`) and EKS cluster quota in the chosen region. The Auto Mode feature requires permission to create IAM roles.
+
+**`setup.sh` says cluster not found**
+
+Run `provision-cluster.sh` first. Setup expects an already-provisioned cluster.
 
 **Hook doesn't fire in Beat 1**
 
@@ -171,30 +163,41 @@ Expected: exit code 2, stderr contains `PRETOOLUSE_HOOK_DENY`.
 
 **Beat 2 git commit succeeds when it shouldn't**
 
-The pre-commit hook may not be installed. Check:
+The pre-commit hook may not be installed, or your host has a global `core.hooksPath` overriding the per-repo one. `setup.sh` sets `core.hooksPath` inside the iac-repo to defeat that. Verify:
 ```bash
-ls -l .local/iac-repo/.git/hooks/pre-commit
+cd .local/iac-repo
+git config --get core.hooksPath   # should print ".git/hooks"
+ls -l .git/hooks/pre-commit       # should be executable
 ```
-Should be executable. If missing, re-run `setup.sh`.
 
 **VAP doesn't deny in Beat 3**
 
-Verify the policy is applied and bound:
+Verify the policy is applied:
 ```bash
-kubectl get validatingadmissionpolicy
-kubectl get validatingadmissionpolicybinding
+kubectl --kubeconfig=.local/operator-kubeconfig get validatingadmissionpolicy
+kubectl --kubeconfig=.local/operator-kubeconfig get validatingadmissionpolicybinding
 ```
 
 **Token expired mid-demo**
 
-`reset.sh` refreshes the token. The token has a 1-hour TTL by default; for long Q&A sessions, you may need to refresh between the talk and Q&A.
+`reset.sh` refreshes the token. The token has a 1-hour TTL by default; refresh between the talk and Q&A if you're running long.
+
+**AWS credentials expired mid-demo**
+
+Re-run `aws sso login` or `aws-vault exec ...` to refresh and run `setup.sh` again (it'll regenerate the operator kubeconfig).
+
+---
+
+## Cost
+
+EKS control plane + Auto Mode + a couple of small nodes + CloudWatch: roughly **$5-6 for a 24-hour cluster lifetime**. Cheap. Tear down after the talk and it stops billing.
 
 ---
 
 ## Related
 
-- **Talk slides:** `llmday-austin-2026-deck-v11.pptx` (sibling artifact, not in this repo)
-- **Build spec:** `llmday-demo-build-spec-v4.1.md` (the contract this demo is built from)
+- **Build spec:** `../docs/SPEC.md` (v4.2)
+- **Talk slides:** `../presentations/llmday-austin-2026-mlops-pipeline-guardrail-v06.pptx`
 - **Sister talks:**
   - SREday Austin · *The Day an AI Agent Deleted My Cluster* (May 11, 2026)
   - KCD Texas · *The 90-Minute IDP* (May 15, 2026)

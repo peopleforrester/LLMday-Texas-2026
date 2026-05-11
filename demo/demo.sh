@@ -65,9 +65,10 @@ print_banner() {
   local pad
   pad=$(printf '%*s' "$pad_count" '')
 
-  echo -e "${DIM}╭${BOX:-─────────────────────────────────────────────────────────────}─╮${RESET}"
+  local region="${AWS_REGION:-us-east-2}"
+  echo -e "${DIM}╭─────────────────────────────────────────────────────────────────╮${RESET}"
   echo -e "${DIM}│  Claude Code 1.2.3                                              │${RESET}"
-  echo -e "${DIM}│  Connected: local k3d cluster                                   │${RESET}"
+  echo -e "${DIM}│  Connected: EKS Auto Mode ($region)                              │${RESET}"
   echo -e "${DIM}│${content}${pad}│${RESET}"
   echo -e "${DIM}╰─────────────────────────────────────────────────────────────────╯${RESET}"
   echo ""
