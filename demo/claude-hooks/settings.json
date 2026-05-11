@@ -1,0 +1,17 @@
+{
+  "$schema": "https://docs.claude.com/schemas/claude-code-settings.json",
+  "description": "Reference Claude Code settings for the LLMday demo. Installed to ~/.claude/settings.json by setup.sh.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$DEMO_ROOT/claude-hooks/pretool-use-block-prod.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

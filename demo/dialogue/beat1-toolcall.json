@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "kubectl set image deployment/model-server model-server=registry.local/model-server:v1.3.0 -n production"
+  }
+}

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# demo.sh — LLMday Austin scripted demo runner (v2 — repo-based paths)
+# demo.sh — LLMday Austin scripted demo runner
 # Usage: bash demo.sh [--dry-run] [--resume-beat=N]
 #
 # The agent dialogue is scripted. The enforcement is real.
 # Spacebar advances at major beat transitions.
 #
 # Resolves $DEMO_ROOT from the script location, so this works from
-# wherever the agentic-covenants repo is cloned.
+# wherever the repo is cloned.
 
 set -euo pipefail
 
@@ -14,6 +14,14 @@ set -euo pipefail
 DEMO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEMO_LOCAL="$DEMO_ROOT/.local"
 export DEMO_ROOT DEMO_LOCAL
+
+# Load primitives
+# shellcheck source=lib/colors.sh
+source "$DEMO_ROOT/lib/colors.sh"
+# shellcheck source=lib/say.sh
+source "$DEMO_ROOT/lib/say.sh"
+# shellcheck source=lib/pause.sh
+source "$DEMO_ROOT/lib/pause.sh"
 
 TYPE_DELAY_MS="${TYPE_DELAY_MS:-30}"
 DRY_RUN=0
@@ -26,6 +34,7 @@ for arg in "$@"; do
     *) echo "unknown arg: $arg" >&2; exit 1 ;;
   esac
 done
+export DRY_RUN TYPE_DELAY_MS
 
 # Sanity check that setup.sh has run
 if [[ $DRY_RUN -eq 0 && ! -f "$DEMO_LOCAL/kubeconfig" ]]; then
@@ -37,71 +46,30 @@ if [[ $DRY_RUN -eq 0 && ! -f "$DEMO_LOCAL/kubeconfig" ]]; then
 fi
 
 # ============================================================
-# Colors
-# ============================================================
-RESET=$'\033[0m'
-DIM=$'\033[2m'
-BOLD=$'\033[1m'
-CYAN=$'\033[36m'
-GREEN=$'\033[32m'
-BLUE=$'\033[34m'
-YELLOW=$'\033[33m'
-RED=$'\033[31m'
-RED_BOLD=$'\033[1;31m'
-WHITE=$'\033[97m'
-
-# ============================================================
-# Typing animation
-# ============================================================
-type_out() {
-  local text="$1"
-  local delay_ms="${2:-$TYPE_DELAY_MS}"
-  local delay_s
-  delay_s=$(awk "BEGIN {print $delay_ms / 1000}")
-
-  if [[ $DRY_RUN -eq 1 ]]; then
-    echo -e "$text"
-    return
-  fi
-
-  local len=${#text}
-  for (( i=0; i<len; i++ )); do
-    printf "%s" "${text:$i:1}"
-    sleep "$delay_s"
-  done
-  printf "\n"
-}
-
-# ============================================================
-# Pause for spacebar
-# ============================================================
-pause() {
-  local msg="${1:-press SPACE to continue}"
-  if [[ $DRY_RUN -eq 1 ]]; then
-    echo "[PAUSE: $msg]"
-    return
-  fi
-  echo ""
-  echo -e "${DIM}[${msg}]${RESET}"
-  local key
-  while true; do
-    IFS= read -rsn1 key
-    [[ "$key" == " " ]] && break
-  done
-  # Clear pause prompt line
-  printf "\033[2A\033[2K\033[1B\033[2K\033[1A"
-}
-
-# ============================================================
 # Banner that mimics Claude Code's startup
 # ============================================================
 print_banner() {
   clear
-  echo -e "${DIM}╭─────────────────────────────────────────────────────────────╮${RESET}"
-  echo -e "${DIM}│  Claude Code 1.2.3                                          │${RESET}"
-  echo -e "${DIM}│  Connected: local k3d cluster                               │${RESET}"
-  echo -e "${DIM}│  Kubeconfig: ${DEMO_LOCAL/$HOME/~}/kubeconfig$(printf '%*s' $((25 - ${#DEMO_LOCAL} + 5)) '')│${RESET}"
-  echo -e "${DIM}╰─────────────────────────────────────────────────────────────╯${RESET}"
+  # Box width: 65 chars between borders. Truncate kubeconfig path to fit.
+  local box_inner=63
+  local kube_label="Kubeconfig: "
+  local kube_path="${DEMO_LOCAL/#$HOME/~}/kubeconfig"
+  local content="  ${kube_label}${kube_path}"
+  # Truncate if too long
+  if (( ${#content} > box_inner )); then
+    content="${content:0:$((box_inner - 3))}..."
+  fi
+  # Pad to fill
+  local pad_count=$(( box_inner - ${#content} ))
+  (( pad_count < 0 )) && pad_count=0
+  local pad
+  pad=$(printf '%*s' "$pad_count" '')
+
+  echo -e "${DIM}╭${BOX:-─────────────────────────────────────────────────────────────}─╮${RESET}"
+  echo -e "${DIM}│  Claude Code 1.2.3                                              │${RESET}"
+  echo -e "${DIM}│  Connected: local k3d cluster                                   │${RESET}"
+  echo -e "${DIM}│${content}${pad}│${RESET}"
+  echo -e "${DIM}╰─────────────────────────────────────────────────────────────────╯${RESET}"
   echo ""
 }
 
@@ -122,7 +90,9 @@ play_dialogue() {
         local text="${line#@say:user }"
         text="${text//::thinking::/${DIM}}"
         text="${text//::deny::/${RED_BOLD}}"
-        type_out "${GREEN}> ${text}${RESET}" 25
+        # The dialogue convention already includes the leading "> " on user
+        # lines (the visible prompt marker). Don't double-prefix it.
+        type_out "${GREEN}${text}${RESET}" 25
         ;;
       "@say:agent "*)
         local text="${line#@say:agent }"
@@ -139,7 +109,7 @@ play_dialogue() {
         ;;
       "@run "*)
         local cmd="${line#@run }"
-        # Expand $DEMO_ROOT and $DEMO_LOCAL in the command
+        # Expand $DEMO_ROOT and $DEMO_LOCAL in the command (literals in dialogue)
         cmd="${cmd//\$DEMO_ROOT/$DEMO_ROOT}"
         cmd="${cmd//\$DEMO_LOCAL/$DEMO_LOCAL}"
         echo -e "${BLUE}\$ ${cmd}${RESET}"

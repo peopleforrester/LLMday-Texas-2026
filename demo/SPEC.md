@@ -11,11 +11,11 @@
 
 ## What changed v4 → v4.1
 
-The demo is not an ephemeral session artifact. It's a versioned, reproducible piece of the `agentic-covenants` repo that gets rehearsed tonight, performed tomorrow, used again at KCD Texas, and probably reused at every future talk that touches the Eight Guardrails. It belongs in the repo.
+The demo is not an ephemeral session artifact. It's a versioned, reproducible piece of this repo that gets rehearsed tonight, performed tomorrow, used again at KCD Texas, and probably reused at every future talk that touches the Eight Guardrails. It belongs in the repo.
 
 **Path substitutions throughout:**
 - v4: `/tmp/llmday-demo/` everywhere
-- v4.1: `$DEMO_ROOT` (resolves to `<repo>/demos/llmday-austin/`) for checked-in artifacts
+- v4.1: `$DEMO_ROOT` (resolves to `<repo>/demo/`) for checked-in artifacts
 - v4.1: `$DEMO_ROOT/.local/` (gitignored) for ephemeral runtime files (kubeconfig, token, audit log)
 
 Everything else from v4 is preserved: the three beats, the scripted dialogue with real enforcement, the hybrid pacing, the May 2026 May 2026 conventions, the acceptance criteria.
@@ -24,16 +24,11 @@ Everything else from v4 is preserved: the three beats, the scripted dialogue wit
 
 ## Repo structure
 
-The demo lives in `agentic-covenants/demos/llmday-austin/`. When someone clones the repo, the entire demo is right there: scripts, hooks, manifests, dialogue, runbook. Only the runtime artifacts (cluster state, tokens, audit log) get generated at setup time.
+The demo lives in this repo at `demo/`. When someone clones the repo, the entire demo is right there: scripts, hooks, manifests, dialogue, runbook. Only the runtime artifacts (cluster state, tokens, audit log) get generated at setup time.
 
 ```
-agentic-covenants/
-├── README.md                                # repo-level docs (existing)
-├── policies/                                # reusable policy library (existing or planned)
-│   ├── kyverno/
-│   └── vap/
-└── demos/
-    └── llmday-austin/                       # THE DEMO
+LLMday-Texas-2026/
+└── demo/                                    # THE DEMO
         ├── README.md                        # demo-specific quick start
         ├── setup.sh                         # one-shot bootstrap
         ├── reset.sh                         # between-beats reset (rarely needed)
@@ -368,7 +363,7 @@ echo "Run: bash demo.sh"
 
 ```markdown
 ## Pre-show checklist (10 min before going on)
-- [ ] `cd ~/code/agentic-covenants/demos/llmday-austin` (or wherever the repo is cloned)
+- [ ] `cd <repo>/demo` (wherever this repo is cloned)
 - [ ] `bash setup.sh` completed clean (target: under 90 seconds)
 - [ ] Four-pane tmux layout visible at 22pt font
 - [ ] `bash demo.sh --dry-run` shows all dialogue without errors
@@ -438,9 +433,9 @@ The audience sees that principle live, in the difference between the scripted to
 
 ## What Claude Code needs to build
 
-Hand this spec to Claude Code with the repo path. Tell it: "Build the demo described in this spec at `demos/llmday-austin/` in the agentic-covenants repo. Use `$DEMO_ROOT` and `$DEMO_LOCAL` conventions throughout. When all acceptance criteria pass, the demo is ready."
+Hand this spec to Claude Code with the repo path. Tell it: "Build the demo described in this spec at `demo/` in this repo. Use `$DEMO_ROOT` and `$DEMO_LOCAL` conventions throughout. When all acceptance criteria pass, the demo is ready."
 
-Claude Code should produce, under `demos/llmday-austin/`:
+Claude Code should produce, under `demo/`:
 
 1. The directory structure exactly as shown above
 2. All scripts (`setup.sh`, `reset.sh`, `teardown.sh`, `demo.sh`) with proper `$DEMO_ROOT` resolution

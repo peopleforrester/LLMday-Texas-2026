@@ -1,0 +1,32 @@
+---
+# Minimal API server audit policy for the LLMday demo.
+# Captures metadata for all DELETE operations on apps and core resources,
+# and RequestResponse for everything in the production namespace (so the
+# audit log shows the denied VAP attempts in Beat 3).
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages:
+  - "RequestReceived"
+rules:
+  # Capture the full request and response for any write to production
+  - level: RequestResponse
+    namespaces: ["production"]
+    verbs: ["create", "update", "patch", "delete"]
+    resources:
+      - group: "apps"
+      - group: ""
+  # Capture metadata for any DELETE elsewhere
+  - level: Metadata
+    verbs: ["delete"]
+    resources:
+      - group: "apps"
+      - group: ""
+  # Drop noisy reads and leases
+  - level: None
+    resources:
+      - group: ""
+        resources: ["events", "leases"]
+  - level: None
+    verbs: ["get", "list", "watch"]
+  # Catchall metadata
+  - level: Metadata

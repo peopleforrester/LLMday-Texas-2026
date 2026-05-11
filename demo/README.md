@@ -203,4 +203,4 @@ kubectl get validatingadmissionpolicybinding
 
 ## License
 
-Whatever the parent `agentic-covenants` repo uses. The Eight Guardrails Framework documented here is Michael Forrester's original work.
+This demo is part of the LLMday Texas 2026 repo and is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Attribution: Michael R Forrester, 2026. The Eight Guardrails Framework and the Agentic Covenants Matrix referenced here are Michael R Forrester's original work, maintained at [github.com/peopleforrester/agentic-covenants](https://github.com/peopleforrester/agentic-covenants).
