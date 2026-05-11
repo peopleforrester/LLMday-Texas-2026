@@ -1,12 +1,13 @@
-# LLMday Texas 2026 — Project Context for Claude Code
+# LLMday Texas 2026: Project Context for Claude Code
 
-This repo holds the talk artifacts for the LLMday Austin 2026 talk "Your MLOps Pipeline is your Agentic AI Guardrail." 30-minute slot, Beginner level, scheduled 2026-05-12 at 2:30 PM.
+This repo holds the talk artifacts for the LLMday Austin 2026 talk "Your MLOps Pipeline Is Your Agentic AI Guardrail." 30-minute slot, Beginner level, scheduled 2026-05-12 at 2:30 PM.
 
 ## What lives here
 
-- `mlops-as-agentic-guardrail.md` — the canonical article (Opinion piece) with the Agentic Covenants Matrix mapping. Ready for Micropub publication.
-- `docs/outline.md` — the 30-minute talk outline (in progress).
-- `PROJECT_STATE.md` — current status and remaining work.
+- `mlops-as-agentic-guardrail.md`: the canonical article (Opinion piece) with the Agentic Covenants Matrix mapping. Ready for Micropub publication.
+- `presentations/`: the v06 slide deck as delivered.
+- `docs/outline.md`: as-delivered 19-slide outline derived from the deck.
+- `PROJECT_STATE.md`: current status and remaining work.
 
 ## What does NOT live here
 
@@ -15,9 +16,9 @@ This repo holds the talk artifacts for the LLMday Austin 2026 talk "Your MLOps P
 
 ## Writing standards for the article and any derivative prose
 
-These apply to `mlops-as-agentic-guardrail.md`, README, blog posts, and any text-only prose that ships through Micropub or similar publication paths. They do NOT apply to the slide deck, which intentionally uses AI-flavored rhetoric as part of the talk's theme.
+These apply to `mlops-as-agentic-guardrail.md`, README, blog posts, and any text-only prose that ships through Micropub or similar publication paths. **Slide deck bodies are exempt** (the AI-flavored rhetoric on the slides is intentional theme work, part of "the game"). **Speaker notes are NOT exempt**: they are spoken aloud, so they follow the same standards as prose. If you scan the deck, scan body and notes separately.
 
-- No em-dashes anywhere. Use commas, colons, parentheses, periods.
+- No em-dashes in the prose artifacts listed in the section header above. Use commas, colons, parentheses, periods. The slide deck is exempt.
 - No AI-isms: avoid "delve", "under the hood", "genuinely", "in today's landscape", and constructions like "the question isn't X, the question is Y".
 - Avoid parallel closing sentence pairs.
 - Article titles use a content-type prefix: "Opinion: ..." or "Walkthrough: ...".
