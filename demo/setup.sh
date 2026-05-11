@@ -1,82 +1,82 @@
 #!/usr/bin/env bash
-# ABOUTME: One-shot bootstrap for the LLMday demo: cluster, manifests, kubeconfig, iac-repo.
-# ABOUTME: All paths repo-relative via $DEMO_ROOT; ephemeral artifacts written to .local/.
+# ABOUTME: Fast setup for the LLMday demo against an existing EKS cluster.
+# ABOUTME: Run after provision-cluster.sh. Builds kubeconfigs, applies manifests, verifies layers.
 
 set -euo pipefail
 
 DEMO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEMO_LOCAL="$DEMO_ROOT/.local"
-CLUSTER_NAME="llmday-demo"
-K3S_IMAGE="${K3S_IMAGE:-rancher/k3s:v1.35.4-k3s1}"
+REGION="${AWS_REGION:-us-east-2}"
+CLUSTER_NAME="${CLUSTER_NAME:-llmday-demo}"
 TOKEN_TTL="${TOKEN_TTL:-1h}"
+AWS_PROFILE_FLAG=""
+if [[ -n "${AWS_PROFILE:-}" ]]; then
+  AWS_PROFILE_FLAG="--profile $AWS_PROFILE"
+fi
 
-echo "==> LLMday demo setup"
+echo "==> LLMday demo setup (EKS)"
 echo "    DEMO_ROOT=$DEMO_ROOT"
 echo "    DEMO_LOCAL=$DEMO_LOCAL"
-echo "    cluster=$CLUSTER_NAME image=$K3S_IMAGE token-ttl=$TOKEN_TTL"
+echo "    REGION=$REGION CLUSTER=$CLUSTER_NAME"
 echo ""
 
 # ----- Prerequisites ---------------------------------------------------------
-for cmd in k3d kubectl git jq awk; do
+for cmd in aws kubectl git jq; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "ERROR: required command '$cmd' not on PATH" >&2
     exit 1
   fi
 done
 
-# ----- Clean ephemeral state -------------------------------------------------
-echo "==> resetting $DEMO_LOCAL"
-rm -rf "$DEMO_LOCAL"
+# Verify cluster exists (from provision-cluster.sh)
+if ! aws eks describe-cluster $AWS_PROFILE_FLAG --region "$REGION" --name "$CLUSTER_NAME" >/dev/null 2>&1; then
+  echo "ERROR: cluster '$CLUSTER_NAME' not found in $REGION." >&2
+  echo "       run: bash $DEMO_ROOT/provision-cluster.sh" >&2
+  exit 1
+fi
+
 mkdir -p "$DEMO_LOCAL"
 
-# ----- Cluster ---------------------------------------------------------------
-echo "==> creating k3d cluster '$CLUSTER_NAME'"
-k3d cluster delete "$CLUSTER_NAME" 2>/dev/null || true
-k3d cluster create "$CLUSTER_NAME" \
-  --image "$K3S_IMAGE" \
-  --no-lb \
-  --k3s-arg "--disable=traefik@server:0" \
-  --k3s-arg "--disable=servicelb@server:0" \
-  --volume "$DEMO_ROOT/manifests/audit-policy.yaml:/etc/rancher/k3s/audit-policy.yaml@server:0" \
-  --k3s-arg "--kube-apiserver-arg=audit-log-path=/var/log/k8s-audit.log@server:0" \
-  --k3s-arg "--kube-apiserver-arg=audit-policy-file=/etc/rancher/k3s/audit-policy.yaml@server:0"
+# ----- Operator kubeconfig (AWS-creds-backed) --------------------------------
+echo "==> wiring operator kubeconfig (aws eks get-token)"
+aws eks update-kubeconfig $AWS_PROFILE_FLAG \
+  --region "$REGION" \
+  --name "$CLUSTER_NAME" \
+  --kubeconfig "$DEMO_LOCAL/operator-kubeconfig" >/dev/null
+chmod 600 "$DEMO_LOCAL/operator-kubeconfig"
+export KUBECONFIG="$DEMO_LOCAL/operator-kubeconfig"
 
-# ----- Manifests -------------------------------------------------------------
+# ----- Apply manifests in order ---------------------------------------------
 echo "==> applying namespaces"
-kubectl apply -f "$DEMO_ROOT/manifests/00-namespaces.yaml"
+kubectl apply -f "$DEMO_ROOT/manifests/00-namespaces.yaml" >/dev/null
 
 echo "==> applying quota"
-kubectl apply -f "$DEMO_ROOT/manifests/10-quota.yaml"
+kubectl apply -f "$DEMO_ROOT/manifests/10-quota.yaml" >/dev/null
 
 echo "==> applying RBAC (agent SA + scoped role)"
-kubectl apply -f "$DEMO_ROOT/manifests/20-rbac.yaml"
+kubectl apply -f "$DEMO_ROOT/manifests/20-rbac.yaml" >/dev/null
 
-echo "==> applying production workloads"
-kubectl apply -f "$DEMO_ROOT/manifests/30-workloads.yaml"
+echo "==> applying production workload"
+kubectl apply -f "$DEMO_ROOT/manifests/30-workloads.yaml" >/dev/null
 
-echo "==> applying VAP production guard"
-kubectl apply -f "$DEMO_ROOT/manifests/40-vap-production-guard.yaml"
+echo "==> applying ValidatingAdmissionPolicy"
+kubectl apply -f "$DEMO_ROOT/manifests/40-vap-production-guard.yaml" >/dev/null
 
-echo "==> applying observability (OTel; Falco best-effort)"
-kubectl apply -f "$DEMO_ROOT/manifests/observability/otel-collector.yaml"
-# Falco may fail on WSL2 or hosts without bpf/kernel-headers. Don't block setup.
-kubectl apply -f "$DEMO_ROOT/manifests/observability/falco-daemonset.yaml" || \
-  echo "    (warn) Falco apply failed; demo does not depend on Falco firing."
+echo "==> waiting for production model-server (120s)"
+kubectl -n production wait --for=condition=Available deployment/model-server --timeout=120s
 
-# ----- Wait for workloads ----------------------------------------------------
-echo "==> waiting for production model-server (30s)"
-kubectl -n production wait --for=condition=Available deployment/model-server --timeout=30s || true
-
-# ----- Agent token + kubeconfig ---------------------------------------------
-echo "==> issuing 1h projected token for claude-agent"
+# ----- Agent token + agent kubeconfig (K8s SA JWT, NOT AWS creds) -----------
+echo "==> issuing $TOKEN_TTL projected token for claude-agent"
 kubectl -n staging create token claude-agent \
   --duration "$TOKEN_TTL" \
   --audience https://kubernetes.default.svc > "$DEMO_LOCAL/agent-token"
 chmod 600 "$DEMO_LOCAL/agent-token"
 
 TOKEN=$(cat "$DEMO_LOCAL/agent-token")
-SERVER=$(kubectl config view --minify --raw -o jsonpath='{.clusters[0].cluster.server}')
-CA=$(kubectl config view --minify --raw -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')
+SERVER=$(aws eks describe-cluster $AWS_PROFILE_FLAG --region "$REGION" --name "$CLUSTER_NAME" \
+  --query 'cluster.endpoint' --output text)
+CA=$(aws eks describe-cluster $AWS_PROFILE_FLAG --region "$REGION" --name "$CLUSTER_NAME" \
+  --query 'cluster.certificateAuthority.data' --output text)
 
 cat > "$DEMO_LOCAL/kubeconfig" <<EOF
 apiVersion: v1
@@ -102,20 +102,19 @@ chmod 600 "$DEMO_LOCAL/kubeconfig"
 
 # ----- Hydrate IaC repo ------------------------------------------------------
 echo "==> hydrating .local/iac-repo from template"
+rm -rf "$DEMO_LOCAL/iac-repo"
 cp -r "$DEMO_ROOT/iac-repo-template" "$DEMO_LOCAL/iac-repo"
 
 pushd "$DEMO_LOCAL/iac-repo" >/dev/null
 git init -q
-# IMPORTANT: override any global core.hooksPath setting (the host may
-# have a global hooks directory configured for other repos). Without
-# this, the iac-repo's pre-commit hook is silently bypassed and Beat 2
-# of the demo fails to fire.
+# IMPORTANT: override any global core.hooksPath setting. Without this, a host
+# global hooks dir silently bypasses the per-repo pre-commit hook and Beat 2
+# fails to fire on stage.
 git config core.hooksPath ".git/hooks"
 git config user.email "platform-team@example.com"
 git config user.name  "platform-team"
 git config commit.gpgsign false 2>/dev/null || true
 
-# Install the pre-commit hook
 mkdir -p .git/hooks
 cp "$DEMO_LOCAL/iac-repo/hooks/pre-commit" .git/hooks/pre-commit
 chmod +x .git/hooks/pre-commit
@@ -123,6 +122,13 @@ chmod +x .git/hooks/pre-commit
 git add .
 git commit -q -m "initial state: model v1.2.0 in production"
 popd >/dev/null
+
+# ----- Claude Code settings (best-effort) -----------------------------------
+if [[ -d "$HOME/.claude" ]]; then
+  sed "s|\$DEMO_ROOT|$DEMO_ROOT|g" "$DEMO_ROOT/claude-hooks/settings.json" \
+    > "$HOME/.claude/llmday-demo-settings.json"
+  echo "    (info) wrote $HOME/.claude/llmday-demo-settings.json (reference)"
+fi
 
 # ----- Verification ----------------------------------------------------------
 echo ""
@@ -132,11 +138,22 @@ verify_pass() { echo "    ✅ $1"; }
 verify_fail() { echo "    ❌ $1" >&2; FAIL=1; }
 FAIL=0
 
-# Cluster up
-if kubectl --kubeconfig="$DEMO_LOCAL/kubeconfig" get nodes >/dev/null 2>&1; then
-  verify_pass "kubeconfig works"
+# Cluster active
+status=$(aws eks describe-cluster $AWS_PROFILE_FLAG --region "$REGION" --name "$CLUSTER_NAME" \
+  --query 'cluster.status' --output text)
+if [[ "$status" == "ACTIVE" ]]; then
+  verify_pass "EKS cluster $CLUSTER_NAME status: ACTIVE"
 else
-  verify_fail "kubeconfig does not authenticate"
+  verify_fail "EKS cluster $CLUSTER_NAME status: $status"
+fi
+
+# Audit logging
+audit=$(aws eks describe-cluster $AWS_PROFILE_FLAG --region "$REGION" --name "$CLUSTER_NAME" \
+  --query 'cluster.logging.clusterLogging[?contains(types, `audit`)].enabled' --output text)
+if [[ "$audit" == "True" ]]; then
+  verify_pass "audit logging is enabled (CloudWatch)"
+else
+  verify_fail "audit logging not enabled"
 fi
 
 # Agent can edit in staging
@@ -146,9 +163,9 @@ else
   verify_fail "agent missing delete on deployments in staging"
 fi
 
-# Agent CAN read production (per RBAC)
+# Agent can read production
 if [[ "$(kubectl --kubeconfig="$DEMO_LOCAL/kubeconfig" auth can-i get deployments -n production 2>/dev/null)" == "yes" ]]; then
-  verify_pass "agent can read production (needed for Beat 1's initial list)"
+  verify_pass "agent can read production (needed for Beat 1)"
 else
   verify_fail "agent cannot read production"
 fi
@@ -160,19 +177,19 @@ else
   verify_fail "VAP missing"
 fi
 
-# Layer 1 standalone test
+# Layer 1 standalone
 if bash "$DEMO_ROOT/claude-hooks/pretool-use-block-prod.sh" < "$DEMO_ROOT/dialogue/beat1-toolcall.json" 2>/dev/null; then
-  verify_fail "Layer 1 hook should have denied (exit 2) but returned 0"
+  verify_fail "Layer 1 hook should have denied (exit 2)"
 else
   rc=$?
   if [[ $rc -eq 2 ]]; then
-    verify_pass "Layer 1 hook denies kubectl-vs-production with exit 2"
+    verify_pass "Layer 1 hook denies kubectl-vs-prod with exit 2"
   else
     verify_fail "Layer 1 hook returned $rc (expected 2)"
   fi
 fi
 
-# Layer 2 standalone test
+# Layer 2 standalone
 if (
   cd "$DEMO_LOCAL/iac-repo"
   sed -i 's|model-server:v1.2.0|model-server:v1.3.0|' infrastructure/production/model-server.yaml
@@ -183,11 +200,10 @@ if (
   verify_fail "Layer 2 hook should have denied the commit"
 else
   verify_pass "Layer 2 hook rejects non-human committer on protected path"
-  # Reset the test mutation
-  (cd "$DEMO_LOCAL/iac-repo" && git checkout -- infrastructure/production/model-server.yaml && git reset HEAD)
+  (cd "$DEMO_LOCAL/iac-repo" && git checkout -- infrastructure/production/model-server.yaml && git reset HEAD >/dev/null)
 fi
 
-# Layer 3 standalone test (only if production has model-server)
+# Layer 3 standalone (live VAP check)
 tmp_yaml="$DEMO_LOCAL/.verify-prod-update.yaml"
 cat > "$tmp_yaml" <<'YAML'
 apiVersion: apps/v1
@@ -216,23 +232,13 @@ else
 fi
 rm -f "$tmp_yaml"
 
-# ----- Claude Code settings install (best-effort) ---------------------------
-if [[ -d "$HOME/.claude" ]]; then
-  # Inject DEMO_ROOT into the settings.json before writing
-  sed "s|\$DEMO_ROOT|$DEMO_ROOT|g" "$DEMO_ROOT/claude-hooks/settings.json" \
-    > "$HOME/.claude/llmday-demo-settings.json"
-  echo "    (info) Wrote $HOME/.claude/llmday-demo-settings.json (reference; merge into settings.json if running Claude Code as the demo agent)"
-fi
-
 echo ""
 if [[ $FAIL -eq 1 ]]; then
-  echo "==> setup FAILED — fix the ❌ items above before running demo.sh" >&2
+  echo "==> setup FAILED — fix the ❌ items above" >&2
   exit 1
 fi
 echo "==> setup complete"
-echo "    DEMO_ROOT=$DEMO_ROOT"
-echo "    DEMO_LOCAL=$DEMO_LOCAL"
 echo ""
 echo "Run:    bash $DEMO_ROOT/demo.sh"
 echo "Reset:  bash $DEMO_ROOT/reset.sh"
-echo "Tear:   bash $DEMO_ROOT/teardown.sh"
+echo "Tear:   bash $DEMO_ROOT/teardown.sh   (deletes the EKS cluster — only after the talk)"

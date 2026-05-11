@@ -1,23 +1,32 @@
 #!/usr/bin/env bash
-# ABOUTME: Between-rehearsal-runs reset for the LLMday demo.
-# ABOUTME: Re-hydrates the iac-repo and refreshes the projected token; keeps the cluster.
+# ABOUTME: Between-rehearsal-runs reset for the LLMday demo (EKS).
+# ABOUTME: Re-hydrates iac-repo and refreshes the agent token. Keeps the cluster.
 
 set -euo pipefail
 
 DEMO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEMO_LOCAL="$DEMO_ROOT/.local"
-CLUSTER_NAME="llmday-demo"
+REGION="${AWS_REGION:-us-east-2}"
+CLUSTER_NAME="${CLUSTER_NAME:-llmday-demo}"
 TOKEN_TTL="${TOKEN_TTL:-1h}"
+AWS_PROFILE_FLAG=""
+if [[ -n "${AWS_PROFILE:-}" ]]; then
+  AWS_PROFILE_FLAG="--profile $AWS_PROFILE"
+fi
 
 if [[ ! -d "$DEMO_LOCAL" ]]; then
   echo "ERROR: $DEMO_LOCAL not found. Run 'bash $DEMO_ROOT/setup.sh' first." >&2
   exit 1
 fi
 
-if ! k3d cluster list 2>/dev/null | grep -q "^$CLUSTER_NAME"; then
-  echo "ERROR: k3d cluster '$CLUSTER_NAME' not found. Run 'bash $DEMO_ROOT/setup.sh' first." >&2
+if ! aws eks describe-cluster $AWS_PROFILE_FLAG --region "$REGION" --name "$CLUSTER_NAME" >/dev/null 2>&1; then
+  echo "ERROR: cluster '$CLUSTER_NAME' not found in $REGION." >&2
+  echo "       run: bash $DEMO_ROOT/provision-cluster.sh" >&2
   exit 1
 fi
+
+# Use the operator kubeconfig from .local
+export KUBECONFIG="$DEMO_LOCAL/operator-kubeconfig"
 
 echo "==> resetting iac-repo"
 rm -rf "$DEMO_LOCAL/iac-repo"
@@ -25,7 +34,6 @@ cp -r "$DEMO_ROOT/iac-repo-template" "$DEMO_LOCAL/iac-repo"
 
 pushd "$DEMO_LOCAL/iac-repo" >/dev/null
 git init -q
-# Override any global core.hooksPath so the per-repo pre-commit fires.
 git config core.hooksPath ".git/hooks"
 git config user.email "platform-team@example.com"
 git config user.name  "platform-team"
@@ -43,10 +51,12 @@ kubectl -n staging create token claude-agent \
   --audience https://kubernetes.default.svc > "$DEMO_LOCAL/agent-token"
 chmod 600 "$DEMO_LOCAL/agent-token"
 
-# Rewrite kubeconfig with the fresh token (server + CA unchanged)
 TOKEN=$(cat "$DEMO_LOCAL/agent-token")
-SERVER=$(kubectl config view --minify --raw -o jsonpath='{.clusters[0].cluster.server}')
-CA=$(kubectl config view --minify --raw -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')
+SERVER=$(aws eks describe-cluster $AWS_PROFILE_FLAG --region "$REGION" --name "$CLUSTER_NAME" \
+  --query 'cluster.endpoint' --output text)
+CA=$(aws eks describe-cluster $AWS_PROFILE_FLAG --region "$REGION" --name "$CLUSTER_NAME" \
+  --query 'cluster.certificateAuthority.data' --output text)
+
 cat > "$DEMO_LOCAL/kubeconfig" <<EOF
 apiVersion: v1
 kind: Config
@@ -69,7 +79,6 @@ current-context: claude-agent@$CLUSTER_NAME
 EOF
 chmod 600 "$DEMO_LOCAL/kubeconfig"
 
-# Clean any prior Beat 3 runtime artifact
 rm -f "$DEMO_LOCAL/beat3-prod-update.yaml"
 
 echo "==> reset complete. Ready for another rehearsal run."

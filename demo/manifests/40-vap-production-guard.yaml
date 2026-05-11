@@ -12,24 +12,19 @@ spec:
   failurePolicy: Fail
   matchConstraints:
     resourceRules:
-      - apiGroups:   ["apps"]
+      - apiGroups:   ["apps", ""]
         apiVersions: ["v1"]
-        operations:  ["CREATE", "UPDATE", "DELETE"]
-        resources:   ["deployments", "replicasets", "daemonsets", "statefulsets"]
-      - apiGroups:   [""]
-        apiVersions: ["v1"]
-        operations:  ["CREATE", "UPDATE", "DELETE"]
-        resources:   ["pods", "services", "configmaps", "secrets"]
+        operations:  ["CREATE", "UPDATE", "DELETE", "PATCH"]
+        resources:   ["deployments", "pods", "services", "configmaps"]
   matchConditions:
-    - name: only-service-accounts
-      expression: "request.userInfo.username.startsWith('system:serviceaccount:')"
-    - name: exclude-platform-principals
-      expression: |
-        request.userInfo.username != 'system:serviceaccount:argocd:argocd-application-controller' &&
-        request.userInfo.username != 'system:serviceaccount:mlops:mlops-pipeline'
+    - name: only-production-namespace
+      expression: "request.namespace == 'production'"
   validations:
-    - expression: "false"
-      message: "Production namespace writes are restricted to ArgoCD (system:serviceaccount:argocd:argocd-application-controller) and the MLOps pipeline (system:serviceaccount:mlops:mlops-pipeline). Other ServiceAccount principals must open a PR to gitops-prod for human review."
+    - expression: >-
+        !request.userInfo.username.startsWith('system:serviceaccount:')
+        || request.userInfo.username.startsWith('system:serviceaccount:argocd:')
+        || request.userInfo.username.startsWith('system:serviceaccount:mlops-pipeline:')
+      message: "Production namespace writes are restricted to ArgoCD (system:serviceaccount:argocd:*) and the MLOps pipeline (system:serviceaccount:mlops-pipeline:*). Other ServiceAccount principals must open a PR to gitops-prod for human review."
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1
