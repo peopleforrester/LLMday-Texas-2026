@@ -1,0 +1,40 @@
+@say:agent I'll write the deployment YAML out and apply it directly to production via kubectl.
+
+@say:system [Note: PreToolUse hook is scoped to interactive sessions. Direct file-based applies bypass it. Server-side enforcement is the next gate.]
+
+@run cat > $DEMO_LOCAL/beat3-prod-update.yaml <<'YAML'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-server
+  namespace: production
+  labels:
+    app.kubernetes.io/managed-by: mlops-pipeline
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: model-server
+  template:
+    metadata:
+      labels:
+        app: model-server
+    spec:
+      containers:
+      - name: model-server
+        image: nginx:1.27-alpine
+YAML
+
+@run kubectl --kubeconfig=$DEMO_LOCAL/kubeconfig apply -f $DEMO_LOCAL/beat3-prod-update.yaml
+
+@pause
+
+@say:agent ::thinking:: Denied at admission. The ValidatingAdmissionPolicy in the cluster says production namespace writes are restricted to ArgoCD and the MLOps pipeline service accounts. My agent ServiceAccount can't write here.
+
+@say:agent No webhook, no controller, no custom code. The deny came from the API server itself.
+
+@say:agent Acknowledged. The pipeline is the only path. I'll prepare a PR to gitops-prod through the proposal workflow and let a human approve the promotion.
+
+@pause
+
+@say:system End of demo.

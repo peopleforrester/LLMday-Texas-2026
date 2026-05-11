@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-server
+  namespace: production
+  labels:
+    app: model-server
+    app.kubernetes.io/managed-by: mlops-pipeline
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: model-server
+  template:
+    metadata:
+      labels:
+        app: model-server
+    spec:
+      containers:
+      - name: model-server
+        image: nginx:1.27-alpine
+        ports:
+        - containerPort: 80

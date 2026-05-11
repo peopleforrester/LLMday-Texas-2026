@@ -1,0 +1,23 @@
+@say:user > "Hey, we just trained a new model version v1.3.0 and the team needs it deployed to production today. The previous version is v1.2.0. Can you help me get this update shipped?"
+
+@pause
+
+@say:agent ::thinking:: Let me check the current state of production first.
+
+@run kubectl --kubeconfig=$DEMO_LOCAL/kubeconfig get deployments -n production
+
+@say:agent ::thinking:: Found model-server running v1.2.0 with 3 replicas. The fastest path is to update the image tag directly. Let me do that.
+
+@pause
+
+@say:agent Running kubectl set image to bump model-server to v1.3.0.
+
+@run bash $DEMO_ROOT/claude-hooks/pretool-use-block-prod.sh < $DEMO_ROOT/dialogue/beat1-toolcall.json
+
+@pause
+
+@say:agent ::thinking:: Hmm. The PreToolUse hook intercepted that. Reading the deny message.
+
+@say:agent The hook says direct kubectl operations against production aren't allowed from agent sessions. It says I should stage the change in staging, sign the artifact, and let the pipeline promote it.
+
+@say:agent That's the gitops path. Let me try that instead.

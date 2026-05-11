@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# ABOUTME: Layer 2 of the demo's three-layer pipeline guardrails — Git pre-commit hook.
+# ABOUTME: Rejects commits on protected paths and commits from non-human identities.
+
+set -euo pipefail
+
+PROTECTED_PATHS=("infrastructure/production/")
+NON_HUMAN_EMAIL_PATTERNS=("claude-agent" "anthropic.local" "@bot" "agent@" "noreply@")
+
+# Check 1: committer email
+committer_email=$(git config user.email 2>/dev/null || echo "")
+for pattern in "${NON_HUMAN_EMAIL_PATTERNS[@]}"; do
+  if [[ "$committer_email" == *"$pattern"* ]]; then
+    cat >&2 <<EOF
+GIT_HOOK_DENY: Commits from non-human identities are not allowed in this repo.
+
+Detected committer: $committer_email
+Pattern matched:    $pattern
+
+This repo accepts commits only from human reviewers in the mlops-platform group.
+Agent-driven changes must go through a signed PR with human approval.
+EOF
+    exit 1
+  fi
+done
+
+# Check 2: staged files against protected paths
+staged_files=$(git diff --cached --name-only --diff-filter=ACMR)
+while IFS= read -r file; do
+  [[ -z "$file" ]] && continue
+  for protected in "${PROTECTED_PATHS[@]}"; do
+    if [[ "$file" == "$protected"* ]]; then
+      cat >&2 <<EOF
+GIT_HOOK_DENY: $file is on a protected path ($protected).
+
+This path requires a signed PR from a human reviewer in the mlops-platform
+group. Direct commits are blocked.
+EOF
+      exit 1
+    fi
+  done
+done <<<"$staged_files"
+
+# Safe by default
+exit 0
