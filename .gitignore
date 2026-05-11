@@ -22,7 +22,12 @@ Thumbs.db
 *.pem
 *.key
 
-# Presentation binaries (host externally or use Git LFS)
+# Presentation binaries
+# Block stray pptx files in the repo root or other ad-hoc locations,
+# but allow tracked decks under presentations/. The repo's actual policy
+# is "decks belong in presentations/ and are tracked"; this preserves
+# the safety net against accidental commits elsewhere.
 # Note: *.key already excluded above; covers both SSH keys and Apple Keynote files.
 *.pptx
+!presentations/*.pptx
 *.keynote
