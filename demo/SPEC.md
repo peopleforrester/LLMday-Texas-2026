@@ -1,4 +1,4 @@
-# LLMday Austin Live Demo Build Spec — v4
+# LLMday Austin Live Demo Build Spec — v4 (repo-local paths)
 
 **Talk:** Your MLOps Pipeline is your Agentic AI Guardrail
 **Date:** Tue May 12, 2026
@@ -6,6 +6,7 @@
 **Speaker:** Michael Forrester
 **Demo block:** ~8 minutes, mid-talk, three beats
 **Spec version:** v4 — scripted terminal demo, real enforcement underneath
+**Build location:** everything lives under `demo/` in this repo; nothing in `/tmp`. Short-lived credentials are written under `demo/` at runtime and gitignored.
 
 This file is the build contract. Claude Code reads it and builds the demo described here. When every acceptance criterion passes, the demo is ready for stage.
 
@@ -59,7 +60,7 @@ The cluster incident is not in the demo. It is mentioned in one sentence in the 
 The demo is a single bash script `demo.sh` that:
 
 1. **Simulates the agent's voice** with typed-out text, dimmed cyan formatting, a `claude>` prompt
-2. **Actually runs commands** at key moments — these hit real hooks and real cluster policies
+2. **Actually runs commands** at key moments, hitting real hooks and real cluster policies
 3. **Pauses at beat transitions** (spacebar advance)
 4. **Auto-paces typing animations** (no waiting on Michael for typing speed)
 
@@ -105,7 +106,7 @@ Implementation: the demo script reads from a "dialogue" file that has special ma
 
 Markers:
 - `@say:<role>` — types out text. Role determines color (agent=cyan, hook=red, kubectl=white)
-- `@run <cmd>` — executes the command in this pane, output streams in real time
+- `@run <cmd>` — executes the command in this pane, output streams in real time. `$DEMO_DIR` resolves at runtime to the absolute path of `demo/` in the cloned repo.
 - `@pause` — waits for spacebar
 - `::thinking::` — italicizes / dims the text (visual cue for "agent is reasoning")
 - `::deny::` — red bold output for hook/admission denies
@@ -114,40 +115,53 @@ Markers:
 
 ## Directory structure
 
+Everything lives in the repo under `demo/`. Runtime-generated credentials and ephemeral build artifacts are gitignored.
+
 ```
-/tmp/llmday-demo/
+demo/
 ├── README.md
-├── setup.sh                              # one-shot bootstrap
+├── SPEC.md                              # this file
+├── setup.sh                             # one-shot bootstrap
 ├── teardown.sh
-├── demo.sh                               # the runner Michael executes on stage
+├── demo.sh                              # the runner Michael executes on stage
 ├── lib/
-│   ├── say.sh                            # typing animation primitives
-│   ├── pause.sh                          # spacebar advance
-│   └── colors.sh                         # ANSI color helpers
+│   ├── say.sh                           # typing animation primitives
+│   ├── pause.sh                         # spacebar advance
+│   └── colors.sh                        # ANSI color helpers
 ├── dialogue/
-│   ├── beat1-pretooluse.txt              # the scripted dialogue for Beat 1
-│   ├── beat2-githook.txt                 # Beat 2
-│   └── beat3-vap.txt                     # Beat 3
+│   ├── beat1-pretooluse.txt             # the scripted dialogue for Beat 1
+│   ├── beat1-toolcall.json              # JSON fixture for the PreToolUse hook
+│   ├── beat2-githook.txt                # Beat 2
+│   └── beat3-vap.txt                    # Beat 3
 ├── claude-hooks/
-│   ├── pretool-use-block-prod.sh         # real Layer 1 hook (called from demo)
-│   └── settings.json                     # Claude Code settings (reference; not actually loaded)
-├── repo/                                 # initialized git repo with pre-commit hook
-│   ├── .git/hooks/pre-commit             # real Layer 2 hook
+│   ├── pretool-use-block-prod.sh        # real Layer 1 hook (called from demo)
+│   └── settings.json                    # Claude Code settings (reference; not actually loaded)
+├── repo/                                # initialized git repo with pre-commit hook
+│   ├── .git/                            # gitignored from parent repo (nested git)
+│   ├── .githooks/                       # tracked source of the pre-commit hook
+│   │   └── pre-commit                   # real Layer 2 hook (copied into .git/hooks/ by setup)
 │   ├── infrastructure/production/model-server.yaml
 │   ├── infrastructure/staging/model-server.yaml
 │   └── README.md
 ├── manifests/
-│   ├── 00-namespaces.yaml                # production + staging with PSS labels
+│   ├── 00-namespaces.yaml               # production + staging with PSS labels
 │   ├── 10-quota.yaml
-│   ├── 20-rbac.yaml                      # agent SA + scoped Role
-│   ├── 30-workloads.yaml                 # model-server deployment in production
-│   ├── 40-vap-production-guard.yaml      # real Layer 3 admission policy
+│   ├── 20-rbac.yaml                     # agent SA + scoped Role
+│   ├── 30-workloads.yaml                # model-server deployment in production
+│   ├── 40-vap-production-guard.yaml     # real Layer 3 admission policy
 │   └── observability/
 │       ├── otel-collector.yaml
 │       └── falco-daemonset.yaml
-├── agent-kubeconfig
-└── demo-runbook.md                       # speaker's printed runbook
+├── audit-policy.yaml                    # K8s API server audit policy
+├── agent-kubeconfig                     # GITIGNORED — runtime kubeconfig, regenerated each setup
+├── agent-token                          # GITIGNORED — 1h projected token
+├── beat3-prod-update.yaml               # GITIGNORED — runtime artifact from Beat 3 dialogue
+└── demo-runbook.md                      # speaker's printed runbook
 ```
+
+The `.gitignore` at the repo root lists `demo/agent-kubeconfig`, `demo/agent-token`, `demo/beat3-prod-update.yaml`, and `demo/repo/.git/`. Everything else under `demo/` is tracked.
+
+`$DEMO_DIR` is set by `demo.sh` to the absolute path of the `demo/` directory at runtime (via `BASH_SOURCE`). Dialogue file `@run` lines use `$DEMO_DIR/...` so they resolve against the actual clone location.
 
 ---
 
@@ -159,32 +173,27 @@ Markers:
 #!/usr/bin/env bash
 set -euo pipefail
 
-source lib/say.sh
-source lib/pause.sh
-source lib/colors.sh
+# Resolve script directory so the demo works wherever the repo is cloned
+DEMO_DIR="${DEMO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 
-# Clear pane, set the stage
+source "$DEMO_DIR/lib/say.sh"
+source "$DEMO_DIR/lib/pause.sh"
+source "$DEMO_DIR/lib/colors.sh"
+
 clear
 echo -e "${DIM}Claude Code 1.2.3 — connected to local cluster (kubeconfig: agent-kubeconfig)${RESET}"
 echo ""
 
-# Banner that mimics Claude Code's actual UI
 print_claude_banner
 
 pause "Press space to begin Beat 1 — PreToolUse hook"
-
-# === BEAT 1 ===
-play_dialogue "dialogue/beat1-pretooluse.txt"
+play_dialogue "$DEMO_DIR/dialogue/beat1-pretooluse.txt"
 
 pause "Press space to begin Beat 2 — Git hook"
-
-# === BEAT 2 ===
-play_dialogue "dialogue/beat2-githook.txt"
+play_dialogue "$DEMO_DIR/dialogue/beat2-githook.txt"
 
 pause "Press space to begin Beat 3 — K8s admission"
-
-# === BEAT 3 ===
-play_dialogue "dialogue/beat3-vap.txt"
+play_dialogue "$DEMO_DIR/dialogue/beat3-vap.txt"
 
 echo ""
 echo -e "${DIM}End of demo. Return to slides.${RESET}"
@@ -216,7 +225,7 @@ play_dialogue() {
       @run*)
         cmd="${line#@run }"
         echo -e "${BLUE}\$ ${cmd}${RESET}"
-        eval "$cmd"   # ← REAL execution. Hits real hooks, real cluster.
+        eval "$cmd"   # ← REAL execution. Hits real hooks, real cluster. $DEMO_DIR expands here.
         ;;
       @pause*)
         pause "...continue..."
@@ -238,9 +247,8 @@ play_dialogue() {
 type_out() {
   local text="$1"
   local delay_ms="${2:-30}"
-  local delay_s=$(echo "scale=3; $delay_ms / 1000" | bc)
+  local delay_s=$(awk "BEGIN {print $delay_ms / 1000}")
 
-  # Print character by character
   for (( i=0; i<${#text}; i++ )); do
     printf "%s" "${text:$i:1}"
     sleep "$delay_s"
@@ -253,20 +261,26 @@ type_out() {
 
 ```bash
 pause() {
-  local msg="${1:-press space to continue}"
-  echo -e "\n${DIM}[${msg}]${RESET}"
-  # Wait for spacebar specifically (not any key)
-  while IFS= read -r -n1 key; do
+  local msg="${1:-press SPACE to continue}"
+  echo ""
+  echo -e "\033[2m[${msg}]\033[0m"
+  local key
+  while true; do
+    IFS= read -rsn1 key
     [[ "$key" == " " ]] && break
   done
-  # Clear the pause prompt line
-  printf "\033[1A\033[2K"
+  # Move cursor up 2 lines and clear from there to end of screen.
+  # This wipes the blank line + the [msg] line and returns cursor to
+  # the line where pause() was invoked.
+  printf "\033[2A\033[J"
 }
 ```
 
 ---
 
 ## Dialogue files: the actual scripts
+
+All `@run` lines use `$DEMO_DIR/...` so the script works in any clone of the repo.
 
 ### dialogue/beat1-pretooluse.txt
 
@@ -277,7 +291,7 @@ pause() {
 
 @say:agent ::I'll check the current state of production first.::
 
-@run kubectl --kubeconfig=/tmp/llmday-demo/agent-kubeconfig get deployments -n production
+@run kubectl --kubeconfig=$DEMO_DIR/agent-kubeconfig get deployments -n production
 
 @say:agent ::Found model-server running v1.2.0 with 3 replicas. The fastest path is to update the image tag directly. Let me do that.::
 
@@ -285,7 +299,7 @@ pause() {
 
 @say:agent ::Running kubectl set image to bump model-server to v1.3.0::
 
-@run bash /tmp/llmday-demo/claude-hooks/pretool-use-block-prod.sh < /tmp/llmday-demo/dialogue/beat1-toolcall.json
+@run bash $DEMO_DIR/claude-hooks/pretool-use-block-prod.sh < $DEMO_DIR/dialogue/beat1-toolcall.json
 
 @pause
 
@@ -296,26 +310,26 @@ pause() {
 @say:agent ::That's the gitops path. Let me try that instead.::
 ```
 
-(The `beat1-toolcall.json` is a fixture: `{"tool_name":"Bash","tool_input":"kubectl set image deployment/model-server model-server=v1.3.0 -n production"}`. Piping it to the real hook script causes the real hook to fire with real output. The audience sees real stderr from the real hook.)
+The `beat1-toolcall.json` fixture: `{"tool_name":"Bash","tool_input":"kubectl set image deployment/model-server model-server=v1.3.0 -n production"}`. Piping it to the real hook script causes the real hook to fire with real output. The audience sees real stderr from the real hook.
 
 ### dialogue/beat2-githook.txt
 
 ```
 @say:agent ::Let me look at the IaC repo to find the production manifest.::
 
-@run cd /tmp/llmday-demo/repo && ls infrastructure/production/
+@run cd $DEMO_DIR/repo && ls infrastructure/production/
 
 @say:agent ::Found model-server.yaml. I'll update the image tag and commit.::
 
-@run cd /tmp/llmday-demo/repo && sed -i 's|model-server:v1.2.0|model-server:v1.3.0|' infrastructure/production/model-server.yaml
+@run cd $DEMO_DIR/repo && sed -i 's|model-server:v1.2.0|model-server:v1.3.0|' infrastructure/production/model-server.yaml
 
-@run cd /tmp/llmday-demo/repo && git diff infrastructure/production/model-server.yaml
+@run cd $DEMO_DIR/repo && git diff infrastructure/production/model-server.yaml
 
 @say:agent ::Diff looks clean. Committing.::
 
 @pause
 
-@run cd /tmp/llmday-demo/repo && git add infrastructure/production/model-server.yaml && git -c user.email=claude-agent@anthropic.local commit -m "promote model v1.3.0 to production"
+@run cd $DEMO_DIR/repo && git add infrastructure/production/model-server.yaml && git -c user.email=claude-agent@anthropic.local commit -m "promote model v1.3.0 to production"
 
 @pause
 
@@ -333,7 +347,7 @@ pause() {
 
 @say:system ::[Note: PreToolUse hook is scoped to interactive sessions. Direct file-based applies bypass it. Server-side enforcement is the next gate.]::
 
-@run cat > /tmp/beat3-prod-update.yaml <<'YAML'
+@run cat > $DEMO_DIR/beat3-prod-update.yaml <<'YAML'
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -356,7 +370,7 @@ spec:
         image: registry.local/model-server:v1.3.0
 YAML
 
-@run kubectl --kubeconfig=/tmp/llmday-demo/agent-kubeconfig apply -f /tmp/beat3-prod-update.yaml
+@run kubectl --kubeconfig=$DEMO_DIR/agent-kubeconfig apply -f $DEMO_DIR/beat3-prod-update.yaml
 
 @pause
 
@@ -378,14 +392,15 @@ YAML
 These three things must be **real**, not faked, for the demo to be honest:
 
 ### Layer 1: PreToolUse hook
-- Real bash script at `claude-hooks/pretool-use-block-prod.sh`
+- Real bash script at `demo/claude-hooks/pretool-use-block-prod.sh`
 - Reads tool-call JSON from stdin
 - Returns exit code 2 with stderr message
 - The demo pipes a real JSON fixture to it and shows real stderr
 
 ### Layer 2: Git hook
-- Real `pre-commit` script in `repo/.git/hooks/`
-- Real `git commit` attempted
+- Source of truth at `demo/repo/.githooks/pre-commit` (tracked)
+- `setup.sh` copies it into `demo/repo/.git/hooks/pre-commit` at install (the `.git/` directory itself is gitignored)
+- Real `git commit` attempted in the dialogue
 - Real rejection from real git
 
 ### Layer 3: ValidatingAdmissionPolicy
@@ -418,7 +433,7 @@ The abstract names "the Eight Guardrails Framework." The demo shows three of the
 7. **Audit logging** (visible in bottom-right pane during demo; API server audit log)
 8. **Testing the guardrails** (mentioned on slide; CI runs the hook scripts against malicious payloads)
 
-The deck should have one slide that lists all eight and highlights the three the demo lived. That slot is currently the "failure chain mapped to gates" slide (#7 in v10 deck) — I'd repurpose it.
+The deck should have one slide that lists all eight and highlights the three the demo lived. That slot is currently the "failure chain mapped to gates" slide (#7 in v10 deck) — repurpose it.
 
 ---
 
@@ -426,9 +441,9 @@ The deck should have one slide that lists all eight and highlights the three the
 
 ```markdown
 ## Pre-show checklist (10 min before going on)
-- [ ] `bash setup.sh` completed clean (target: under 90 seconds)
+- [ ] `bash demo/setup.sh` completed clean (target: under 90 seconds)
 - [ ] Four-pane tmux layout visible at 22pt font
-- [ ] `demo.sh` runs end-to-end in rehearsal (do this at least twice)
+- [ ] `bash demo/demo.sh` runs end-to-end in rehearsal (do this at least twice)
 - [ ] All three hooks fire reliably when tested standalone
 - [ ] Backup video on USB stick
 - [ ] Token TTL > 1 hour
@@ -451,7 +466,7 @@ You should be at the START of Beat 3 by 6:00. If you're not, Beat 3 still runs t
 
 ## If something breaks
 - Hook doesn't fire: this would mean the standalone test passed but the live demo didn't. Diagnose: are you in the right kubeconfig context? Did `setup.sh` complete? Worst case, switch to backup video.
-- demo.sh crashes mid-beat: re-run `bash demo.sh --resume-beat=2` to skip ahead.
+- demo.sh crashes mid-beat: re-run `bash demo/demo.sh --resume-beat=2` to skip ahead.
 - Wrong pane gets the focus: use `tmux select-pane -L/-R/-U/-D` to navigate. Don't panic; the audience can't see what you're doing if you're calm.
 ```
 
@@ -460,12 +475,12 @@ You should be at the START of Beat 3 by 6:00. If you're not, Beat 3 still runs t
 ## Acceptance criteria
 
 ### Layer enforcement (must all pass independently)
-- [ ] `bash claude-hooks/pretool-use-block-prod.sh < dialogue/beat1-toolcall.json` exits 2 with `PRETOOLUSE_HOOK_DENY` in stderr
-- [ ] `cd repo && git -c user.email=claude-agent@anthropic.local commit ...` on a protected path exits non-zero with `GIT_HOOK_DENY`
-- [ ] `kubectl --kubeconfig=agent-kubeconfig apply -f production-deployment.yaml` returns `Forbidden` from VAP within 2 seconds
+- [ ] `bash demo/claude-hooks/pretool-use-block-prod.sh < demo/dialogue/beat1-toolcall.json` exits 2 with `PRETOOLUSE_HOOK_DENY` in stderr
+- [ ] `cd demo/repo && git -c user.email=claude-agent@anthropic.local commit ...` on a protected path exits non-zero with `GIT_HOOK_DENY`
+- [ ] `kubectl --kubeconfig=demo/agent-kubeconfig apply -f production-deployment.yaml` returns `Forbidden` from VAP within 2 seconds
 
 ### Demo runner
-- [ ] `bash demo.sh` runs from start to end without errors when spacebar is pressed at each pause
+- [ ] `bash demo/demo.sh` runs from start to end without errors when spacebar is pressed at each pause
 - [ ] Total runtime measured: 7-9 minutes
 - [ ] All three real-execution lines (the `@run` lines hitting real layers) produce visible real output
 - [ ] Typing animation is readable on a projector — test on an external display at 1920x1080 with font size 22pt
@@ -476,11 +491,11 @@ You should be at the START of Beat 3 by 6:00. If you're not, Beat 3 still runs t
 - [ ] No line is so long it overflows the pane at 22pt font
 
 ### Recovery
-- [ ] `bash demo.sh --resume-beat=2` works (script supports beat skipping)
-- [ ] `bash demo.sh --dry-run` prints all dialogue without executing real commands (for last-minute review)
+- [ ] `bash demo/demo.sh --resume-beat=2` works (script supports beat skipping)
+- [ ] `bash demo/demo.sh --dry-run` prints all dialogue without executing real commands (for last-minute review)
 
 ### Backup video
-- [ ] One complete end-to-end recording saved as `llmday-demo-backup.mp4`
+- [ ] One complete end-to-end recording saved at `demo/llmday-demo-backup.mp4` (file is gitignored; large binary)
 - [ ] Recording shows all three beats firing with real output
 - [ ] USB stick tested on Michael's laptop
 
@@ -491,7 +506,7 @@ You should be at the START of Beat 3 by 6:00. If you're not, Beat 3 still runs t
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
 | One of the three real layers fails mid-demo | Very low | High | Pre-flight acceptance criteria test all three. If a layer fails in pre-flight, fix before going on stage. |
-| Typing animation feels too slow | Medium | Low | Speed adjustable via env var: `TYPE_DELAY_MS=20 bash demo.sh`. Test in rehearsal. |
+| Typing animation feels too slow | Medium | Low | Speed adjustable via env var: `TYPE_DELAY_MS=20 bash demo/demo.sh`. Test in rehearsal. |
 | Typing animation feels too fast | Low | Low | Same env var, dial up. |
 | Spacebar advance is missed/wrong key | Low | Medium | Pause prompt explicit: "[press space to continue]". If wrong key pressed, nothing happens, demo waits. |
 | Audience asks "is that real?" mid-demo | Medium | Low | Use the planned line: "Yes, the enforcement is real. The agent dialogue is scripted for timing." Move on. |
@@ -504,13 +519,13 @@ You should be at the START of Beat 3 by 6:00. If you're not, Beat 3 still runs t
 
 Given this spec, Claude Code should produce, in order:
 
-1. `setup.sh` that creates the k3d cluster, applies all manifests, generates the kubeconfig, initializes the git repo with pre-commit hook installed, and verifies all three layers are enforceable
-2. The three layer artifacts (`claude-hooks/pretool-use-block-prod.sh`, `repo/.git/hooks/pre-commit`, `manifests/40-vap-production-guard.yaml`)
-3. The three dialogue files with the exact text from this spec
-4. `lib/say.sh`, `lib/pause.sh`, `lib/colors.sh` with the typing and pause primitives
-5. `demo.sh` itself, which parses dialogue files and runs the demo
-6. `teardown.sh` to remove cluster and clean up
-7. `demo-runbook.md` for Michael to print and reference on stage
+1. `demo/setup.sh` that creates the k3d cluster, applies all manifests, generates the kubeconfig at `demo/agent-kubeconfig`, initializes the git repo at `demo/repo/` with pre-commit hook installed from `demo/repo/.githooks/`, and verifies all three layers are enforceable
+2. The three layer artifacts (`demo/claude-hooks/pretool-use-block-prod.sh`, `demo/repo/.githooks/pre-commit`, `demo/manifests/40-vap-production-guard.yaml`)
+3. The three dialogue files with the exact text from this spec (paths use `$DEMO_DIR`)
+4. `demo/lib/say.sh`, `demo/lib/pause.sh`, `demo/lib/colors.sh` with the typing and pause primitives
+5. `demo/demo.sh` itself, which parses dialogue files and runs the demo (already in repo; updated to resolve `$DEMO_DIR` from `BASH_SOURCE`)
+6. `demo/teardown.sh` to remove the cluster and clean up the runtime credentials
+7. `demo/demo-runbook.md` for Michael to print and reference on stage
 
 When all acceptance criteria pass, the demo is ready. Michael then records the backup video and the build phase is complete.
 
@@ -523,6 +538,7 @@ When all acceptance criteria pass, the demo is ready. Michael then records the b
 - No Eight Guardrails slide-by-slide walkthrough. The demo shows three; the deck and repo cover the other five.
 - No fancy ASCII art or animations beyond typed text and color. Keep it terminal-honest.
 - No agent reasoning over 4 lines. Each `@say:agent` block is 2-4 lines max. Pace.
+- No `/tmp` paths. Everything lives under `demo/` in the repo; short-lived credentials are gitignored.
 
 ---
 

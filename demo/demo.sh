@@ -4,10 +4,16 @@
 #
 # The agent dialogue is scripted. The enforcement is real.
 # Spacebar advances at major beat transitions.
+#
+# All paths resolve under DEMO_DIR, which defaults to the directory
+# this script lives in. Everything stays inside the repo; nothing in /tmp.
 
 set -euo pipefail
 
-DEMO_DIR="${DEMO_DIR:-/tmp/llmday-demo}"
+# Resolve to the script's own directory unless overridden
+DEMO_DIR="${DEMO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+export DEMO_DIR
+
 TYPE_DELAY_MS="${TYPE_DELAY_MS:-30}"
 DRY_RUN=0
 RESUME_BEAT=1
@@ -67,14 +73,16 @@ pause() {
   fi
   echo ""
   echo -e "${DIM}[${msg}]${RESET}"
-  # Disable echo, read one char at a time, wait for space
   local key
   while true; do
     IFS= read -rsn1 key
     [[ "$key" == " " ]] && break
   done
-  # Move up one line and clear the pause prompt
-  printf "\033[2A\033[2K\033[1B\033[2K\033[1A"
+  # Move cursor up 2 lines and clear from there to end of screen.
+  # This wipes the blank line and the [msg] line cleanly and returns
+  # the cursor to the line where pause() was invoked, regardless of
+  # what (if anything) was on that line before.
+  printf "\033[2A\033[J"
 }
 
 # ============================================================
@@ -82,11 +90,11 @@ pause() {
 # ============================================================
 print_banner() {
   clear
-  echo -e "${DIM}╭─────────────────────────────────────────────────────────────╮${RESET}"
-  echo -e "${DIM}│  Claude Code 1.2.3                                          │${RESET}"
-  echo -e "${DIM}│  Connected: local k3d cluster (kubeconfig: agent-kubeconfig) │${RESET}"
-  echo -e "${DIM}│  Workspace: /tmp/llmday-demo                                │${RESET}"
-  echo -e "${DIM}╰─────────────────────────────────────────────────────────────╯${RESET}"
+  echo -e "${DIM}╭──────────────────────────────────────────────────────────────────╮${RESET}"
+  echo -e "${DIM}│  Claude Code 1.2.3                                               │${RESET}"
+  echo -e "${DIM}│  Connected: local k3d cluster (kubeconfig: agent-kubeconfig)     │${RESET}"
+  echo -e "${DIM}│  Workspace: ${DEMO_DIR}${RESET}"
+  echo -e "${DIM}╰──────────────────────────────────────────────────────────────────╯${RESET}"
   echo ""
 }
 
@@ -102,11 +110,9 @@ play_dialogue() {
   fi
 
   while IFS= read -r line || [[ -n "$line" ]]; do
-    # Strip leading/trailing whitespace for marker detection
     case "$line" in
       "@say:user "*)
         local text="${line#@say:user }"
-        # Substitute thinking markers
         text="${text//::thinking::/${DIM}}"
         text="${text//::deny::/${RED_BOLD}}"
         type_out "${GREEN}> ${text}${RESET}" 25
@@ -130,13 +136,14 @@ play_dialogue() {
         if [[ $DRY_RUN -eq 1 ]]; then
           echo "  [DRY RUN — command not executed]"
         else
-          # Allow the command to fail (we WANT it to fail for hook/policy demos)
+          # Allow the command to fail (we WANT it to fail for hook/policy demos).
+          # $DEMO_DIR is exported above so it expands inside the eval'd command.
           eval "$cmd" || true
         fi
         ;;
       "@pause"*)
         local msg="${line#@pause}"
-        msg="${msg# }"  # trim leading space
+        msg="${msg# }"
         pause "${msg:-press SPACE to continue}"
         ;;
       "")
@@ -146,7 +153,6 @@ play_dialogue() {
         # Comment — skip
         ;;
       *)
-        # Raw text — print as-is
         echo "$line"
         ;;
     esac
