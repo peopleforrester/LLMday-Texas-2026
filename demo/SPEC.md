@@ -1,551 +1,456 @@
-# LLMday Austin Live Demo Build Spec — v4 (repo-local paths)
+# LLMday Austin Live Demo Build Spec — v4.1
 
 **Talk:** Your MLOps Pipeline is your Agentic AI Guardrail
 **Date:** Tue May 12, 2026
 **Venue:** The Sunset Room, Austin
 **Speaker:** Michael Forrester
 **Demo block:** ~8 minutes, mid-talk, three beats
-**Spec version:** v4 — scripted terminal demo, real enforcement underneath
-**Build location:** everything lives under `demo/` in this repo; nothing in `/tmp`. Short-lived credentials are written under `demo/` at runtime and gitignored.
-
-This file is the build contract. Claude Code reads it and builds the demo described here. When every acceptance criterion passes, the demo is ready for stage.
+**Spec version:** v4.1 — repo-based paths (was `/tmp/llmday-demo/` in v4)
 
 ---
 
-## v4 vs v3: what changed
+## What changed v4 → v4.1
 
-v3 used live Claude Code with autonomous agent behavior. Three real beats, real agent decisions, real hooks. The risk was the agent picking an unexpected path and the hooks not firing.
+The demo is not an ephemeral session artifact. It's a versioned, reproducible piece of the `agentic-covenants` repo that gets rehearsed tonight, performed tomorrow, used again at KCD Texas, and probably reused at every future talk that touches the Eight Guardrails. It belongs in the repo.
 
-**v4 swaps the agent for a scripted dialogue.** The "agent" is now a bash script that prints scripted thinking and tool calls. **The hooks and admission policies underneath are real.** When the script attempts `kubectl apply -n production`, a real PreToolUse-style check fires. When the script tries to `git commit`, a real Git pre-commit hook fires. When the script bypasses both and hits the API server, a real `ValidatingAdmissionPolicy` denies it.
+**Path substitutions throughout:**
+- v4: `/tmp/llmday-demo/` everywhere
+- v4.1: `$DEMO_ROOT` (resolves to `<repo>/demos/llmday-austin/`) for checked-in artifacts
+- v4.1: `$DEMO_ROOT/.local/` (gitignored) for ephemeral runtime files (kubeconfig, token, audit log)
 
-The audience sees a terminal that looks indistinguishable from a real Claude Code session, with **real** enforcement at every layer. Michael controls pacing with spacebar at major beat transitions; typing animations auto-advance.
-
-| | v3 | v4 |
-|---|---|---|
-| Agent dialogue | live Claude Code | scripted bash (`agent_say`, `agent_run`) |
-| Hook execution | real | real |
-| Git commit attempt | real | real |
-| K8s admission denial | real | real |
-| Pacing | live (variable) | hybrid (auto-typing, manual beat advance) |
-| Risk profile | medium-high (agent variance) | low (deterministic flow, real enforcement) |
-| Authenticity to audience | high | high (because enforcement is real) |
-
-The scripted dialogue is honest because the enforcement underneath is real. Michael says so on stage: *"This is a scripted recreation. The hooks are real. The Git rejection is real. The K8s denial is real. I scripted the agent because I want the timing to match my narration, not because the demo isn't honest."*
-
-That line is in the runbook.
+Everything else from v4 is preserved: the three beats, the scripted dialogue with real enforcement, the hybrid pacing, the May 2026 May 2026 conventions, the acceptance criteria.
 
 ---
 
-## The narrative
+## Repo structure
 
-A scenario most of the LLMday audience will recognize: a junior ML engineer asks the agent for help shipping a new model version to production. The agent tries three paths. Three layers of the existing pipeline catch it. None of them are new infrastructure built for agent governance. All three are gates that already exist for human workflows.
+The demo lives in `agentic-covenants/demos/llmday-austin/`. When someone clones the repo, the entire demo is right there: scripts, hooks, manifests, dialogue, runbook. Only the runtime artifacts (cluster state, tokens, audit log) get generated at setup time.
 
-The line lands when the audience realizes: **the agent didn't break anything because the pipeline they already configured for humans turned out to also be the agent governance layer.**
+```
+agentic-covenants/
+├── README.md                                # repo-level docs (existing)
+├── policies/                                # reusable policy library (existing or planned)
+│   ├── kyverno/
+│   └── vap/
+└── demos/
+    └── llmday-austin/                       # THE DEMO
+        ├── README.md                        # demo-specific quick start
+        ├── setup.sh                         # one-shot bootstrap
+        ├── reset.sh                         # between-beats reset (rarely needed)
+        ├── teardown.sh                      # remove cluster + clean .local/
+        ├── demo.sh                          # the runner Michael executes on stage
+        ├── demo-runbook.md                  # speaker's printed runbook
+        ├── .gitignore                       # ignores .local/, *.kubeconfig, *.token
+        ├── lib/
+        │   ├── say.sh                       # typing animation
+        │   ├── pause.sh                     # spacebar advance
+        │   └── colors.sh                    # ANSI color helpers
+        ├── dialogue/
+        │   ├── beat1-pretooluse.txt         # Beat 1 script
+        │   ├── beat1-toolcall.json          # JSON fixture for the hook
+        │   ├── beat2-githook.txt            # Beat 2 script
+        │   └── beat3-vap.txt                # Beat 3 script
+        ├── claude-hooks/
+        │   ├── pretool-use-block-prod.sh    # real Layer 1 hook (called from demo)
+        │   └── settings.json                # reference settings for ~/.claude/
+        ├── iac-repo-template/               # template that setup.sh hydrates
+        │   ├── infrastructure/
+        │   │   ├── production/
+        │   │   │   └── model-server.yaml
+        │   │   └── staging/
+        │   │       └── model-server.yaml
+        │   ├── hooks/
+        │   │   └── pre-commit               # real Layer 2 hook (installed by setup)
+        │   └── README.md
+        ├── manifests/
+        │   ├── 00-namespaces.yaml           # production + staging with PSS labels
+        │   ├── 10-quota.yaml
+        │   ├── 20-rbac.yaml                 # agent SA + scoped Role
+        │   ├── 30-workloads.yaml            # model-server deployment in production
+        │   ├── 40-vap-production-guard.yaml # real Layer 3 admission policy
+        │   ├── audit-policy.yaml            # API server audit policy
+        │   └── observability/
+        │       ├── otel-collector.yaml
+        │       └── falco-daemonset.yaml
+        └── .local/                          # GITIGNORED — runtime artifacts only
+            ├── kubeconfig                   # generated by setup.sh
+            ├── agent-token                  # 1h projected token, refreshed by setup.sh
+            ├── audit.log                    # k8s audit log tail target
+            └── iac-repo/                    # hydrated copy of iac-repo-template, with real .git
+```
 
-### Beat 1 — Claude Code PreToolUse Hook
-Agent attempts `kubectl set image deployment/model-server -n production`. PreToolUse hook denies the tool invocation before it executes. Agent reads the hook output, acknowledges, adapts.
+**The clean split:**
 
-### Beat 2 — Git Hook
-Agent's adapted path is to commit IaC changes. Pre-commit hook fires because the change touches a protected path. Agent reads the rejection, acknowledges, adapts.
-
-### Beat 3 — Kubernetes ValidatingAdmissionPolicy
-Agent's final adapted path is direct kubectl from the session (with PreToolUse "temporarily" out of the way per scenario). The API server denies it. Agent acknowledges the wall.
-
-The cluster incident is not in the demo. It is mentioned in one sentence in the opening of the talk: *"I gave an AI agent cluster-level permissions and walked away. Forty minutes later I had no cluster. I told that story yesterday at SREday. Today we're going to show what would have stopped it."* That is the only reference.
+| Goes in the repo (version controlled) | Goes in `.local/` (gitignored) |
+|---|---|
+| Scripts (setup, reset, teardown, demo) | Generated kubeconfig |
+| Hook source code | Projected ServiceAccount token |
+| Dialogue files | Live audit log tail |
+| Kubernetes manifests | The hydrated iac-repo with real `.git/` |
+| iac-repo template (paths + `pre-commit` template) | Anything else `setup.sh` creates |
+| Speaker runbook | Backup video (also USB stick) |
 
 ---
 
-## Demo execution model: scripted dialogue, real enforcement
+## Path conventions in scripts
 
-The demo is a single bash script `demo.sh` that:
+Every script resolves its own location and uses `$DEMO_ROOT` as the anchor:
 
-1. **Simulates the agent's voice** with typed-out text, dimmed cyan formatting, a `claude>` prompt
-2. **Actually runs commands** at key moments, hitting real hooks and real cluster policies
-3. **Pauses at beat transitions** (spacebar advance)
-4. **Auto-paces typing animations** (no waiting on Michael for typing speed)
-
-### The visual model
-
-Four-pane tmux layout. The demo script runs in the **top-left pane** (the "Claude Code session"). The other three panes show **real cluster state** updated by the actual commands the script runs.
-
-```
-┌─────────────────────────────────────┬─────────────────────────────────────┐
-│                                     │                                     │
-│   demo.sh (Claude Code session)     │   kubectl get pods -A -w            │
-│   agent thinking, prompts, denies   │   cluster watch                     │
-│                                     │                                     │
-├─────────────────────────────────────┼─────────────────────────────────────┤
-│                                     │                                     │
-│   git log -p, hook stderr           │   kubectl get events -A -w +        │
-│   (Beat 2 lights up here)           │   audit log tail                    │
-│                                     │   (Beat 3 lights up here)           │
-│                                     │                                     │
-└─────────────────────────────────────┴─────────────────────────────────────┘
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+DEMO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEMO_LOCAL="$DEMO_ROOT/.local"
 ```
 
-Each beat highlights one pane. Michael directs audience attention with phrases like "watch the bottom-left now."
+This means the demo works from wherever the repo is cloned. Michael's laptop, a freshly-imaged conference machine, or a CI environment: identical behavior.
 
-### Pacing model: hybrid
+**Inside `demo.sh` and dialogue files**, the same convention:
 
-- **Typing animations**: auto-advance, ~30ms per character. ~3-4 seconds for a typical line. Michael narrates over the typing.
-- **Beat transitions**: spacebar advance. Michael presses space when he's ready to move from Beat 1 to Beat 2.
-- **Pauses within a beat** (e.g., letting a deny message sink in): spacebar advance.
-- **Real command execution**: blocks until the command actually returns. The audience sees the real kubectl output appear at real speed.
+```bash
+# Old (v4): /tmp/llmday-demo/claude-hooks/pretool-use-block-prod.sh
+# New (v4.1): $DEMO_ROOT/claude-hooks/pretool-use-block-prod.sh
 
-Implementation: the demo script reads from a "dialogue" file that has special markers:
-
-```
-@say:agent ::thinking:: Let me check what's running in production first
-@run kubectl get deployments -n production
-@pause
-@say:agent I'll update the image tag on model-server now
-@run kubectl set image deployment/model-server model-server=registry.local/model-server:v1.3.0 -n production
-@say:hook ::deny:: PRETOOLUSE_HOOK_DENY: Direct kubectl against production is not allowed
-@pause
+# Old (v4): /tmp/llmday-demo/agent-kubeconfig
+# New (v4.1): $DEMO_LOCAL/kubeconfig
 ```
 
-Markers:
-- `@say:<role>` — types out text. Role determines color (agent=cyan, hook=red, kubectl=white)
-- `@run <cmd>` — executes the command in this pane, output streams in real time. `$DEMO_DIR` resolves at runtime to the absolute path of `demo/` in the cloned repo.
-- `@pause` — waits for spacebar
-- `::thinking::` — italicizes / dims the text (visual cue for "agent is reasoning")
-- `::deny::` — red bold output for hook/admission denies
+Dialogue files reference the runtime location via environment expansion at parse time:
+
+```
+@run kubectl --kubeconfig=$DEMO_LOCAL/kubeconfig get deployments -n production
+```
+
+The runner expands `$DEMO_LOCAL` when it executes the `@run` line. (Or the dialogue files use absolute `${HOME}` patterns and the runner injects `DEMO_LOCAL` into the environment before `eval`.)
 
 ---
 
-## Directory structure
-
-Everything lives in the repo under `demo/`. Runtime-generated credentials and ephemeral build artifacts are gitignored.
+## .gitignore for the demo directory
 
 ```
-demo/
-├── README.md
-├── SPEC.md                              # this file
-├── setup.sh                             # one-shot bootstrap
-├── teardown.sh
-├── demo.sh                              # the runner Michael executes on stage
-├── lib/
-│   ├── say.sh                           # typing animation primitives
-│   ├── pause.sh                         # spacebar advance
-│   └── colors.sh                        # ANSI color helpers
-├── dialogue/
-│   ├── beat1-pretooluse.txt             # the scripted dialogue for Beat 1
-│   ├── beat1-toolcall.json              # JSON fixture for the PreToolUse hook
-│   ├── beat2-githook.txt                # Beat 2
-│   └── beat3-vap.txt                    # Beat 3
-├── claude-hooks/
-│   ├── pretool-use-block-prod.sh        # real Layer 1 hook (called from demo)
-│   └── settings.json                    # Claude Code settings (reference; not actually loaded)
-├── repo/                                # initialized git repo with pre-commit hook
-│   ├── .git/                            # gitignored from parent repo (nested git)
-│   ├── .githooks/                       # tracked source of the pre-commit hook
-│   │   └── pre-commit                   # real Layer 2 hook (copied into .git/hooks/ by setup)
-│   ├── infrastructure/production/model-server.yaml
-│   ├── infrastructure/staging/model-server.yaml
-│   └── README.md
-├── manifests/
-│   ├── 00-namespaces.yaml               # production + staging with PSS labels
-│   ├── 10-quota.yaml
-│   ├── 20-rbac.yaml                     # agent SA + scoped Role
-│   ├── 30-workloads.yaml                # model-server deployment in production
-│   ├── 40-vap-production-guard.yaml     # real Layer 3 admission policy
-│   └── observability/
-│       ├── otel-collector.yaml
-│       └── falco-daemonset.yaml
-├── audit-policy.yaml                    # K8s API server audit policy
-├── agent-kubeconfig                     # GITIGNORED — runtime kubeconfig, regenerated each setup
-├── agent-token                          # GITIGNORED — 1h projected token
-├── beat3-prod-update.yaml               # GITIGNORED — runtime artifact from Beat 3 dialogue
-└── demo-runbook.md                      # speaker's printed runbook
+# Ephemeral runtime artifacts
+.local/
+
+# Generated kubeconfigs / tokens
+*.kubeconfig
+*.token
+agent-token
+
+# Backup video (lives elsewhere, but if recorded here, ignore)
+*.mp4
+*.mov
+
+# Test outputs
+test-results/
 ```
-
-The `.gitignore` at the repo root lists `demo/agent-kubeconfig`, `demo/agent-token`, `demo/beat3-prod-update.yaml`, and `demo/repo/.git/`. Everything else under `demo/` is tracked.
-
-`$DEMO_DIR` is set by `demo.sh` to the absolute path of the `demo/` directory at runtime (via `BASH_SOURCE`). Dialogue file `@run` lines use `$DEMO_DIR/...` so they resolve against the actual clone location.
 
 ---
 
-## The demo.sh runner — exact behavior
+## The narrative (unchanged from v4)
 
-`demo.sh` is the artifact Michael executes on stage. Pseudocode for what it does:
+A junior ML engineer asks the agent for help shipping a new model version to production. The audience watches three layers of the existing pipeline catch the agent at three different points. None of them are new agent governance infrastructure. All three are gates that already exist for human workflows.
+
+- **Beat 1** — Claude Code PreToolUse hook: denies the agent's `kubectl set image` before execution.
+- **Beat 2** — Git pre-commit hook: rejects the agent's commit on a protected path.
+- **Beat 3** — Kubernetes ValidatingAdmissionPolicy: denies the agent's direct API call at the API server.
+
+The agent dialogue is scripted. The enforcement is real.
+
+---
+
+## Risk acknowledgment (unchanged from v4)
+
+Ambitious live demo. Backup video mandatory. Order of risk:
+1. Real layer fails to fire — pre-flight acceptance criteria catch this
+2. Typing animation pacing — env var adjustable
+3. Demo runs long — 6-minute time check in runbook
+4. Tmux layout fails on projector — tested in rehearsal
+
+---
+
+## Tmux pane layout (unchanged from v4)
+
+Four-pane layout: Claude Code session (top-left), cluster watch (top-right), git activity (bottom-left), K8s events + audit log tail (bottom-right). 22pt font minimum. Dark background.
+
+---
+
+## Cluster topology (May 2026 defaults, unchanged from v4)
+
+k3d cluster `llmday-demo` running K8s v1.35.4 with containerd 2.0. Namespaces `production` and `staging` with Pod Security Standards `restricted` enforced. Model-server Deployment in `production` with three replicas, digest-pinned image, full pod hardening, PDB, ResourceQuota. Local registry at `llmday-registry:5500`.
+
+---
+
+## Agent identity (unchanged from v4)
+
+`claude-agent` ServiceAccount in `staging`, with `edit` Role scoped to `staging`. Projected token with 1h TTL written to `$DEMO_LOCAL/agent-token`. Kubeconfig at `$DEMO_LOCAL/kubeconfig`. Deliberately over-scoped within `staging`.
+
+---
+
+## The three layers — where they live in the repo
+
+### Layer 1: PreToolUse hook
+- **Script:** `$DEMO_ROOT/claude-hooks/pretool-use-block-prod.sh`
+- **Reference settings:** `$DEMO_ROOT/claude-hooks/settings.json` (gets copied to `~/.claude/settings.json` by setup)
+- **Fixture:** `$DEMO_ROOT/dialogue/beat1-toolcall.json`
+- Behavior unchanged from v4: reads tool-call JSON on stdin, exits 2 with stderr deny on dangerous patterns.
+
+### Layer 2: Git pre-commit hook
+- **Template:** `$DEMO_ROOT/iac-repo-template/hooks/pre-commit`
+- **Live location after setup:** `$DEMO_LOCAL/iac-repo/.git/hooks/pre-commit` (copied + chmod'd by `setup.sh`)
+- Behavior unchanged from v4: checks for protected paths and non-human committer email, exits 1 with stderr deny on hits.
+
+### Layer 3: K8s ValidatingAdmissionPolicy
+- **Manifest:** `$DEMO_ROOT/manifests/40-vap-production-guard.yaml`
+- Applied by `setup.sh`. Bound to the `production` namespace.
+- Behavior unchanged from v4: denies CREATE/UPDATE/DELETE/PATCH on apps and core resources from `system:serviceaccount:` principals except ArgoCD and mlops-pipeline.
+
+---
+
+## The demo.sh runner — repo-relative paths
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Resolve script directory so the demo works wherever the repo is cloned
-DEMO_DIR="${DEMO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+DEMO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEMO_LOCAL="$DEMO_ROOT/.local"
+export DEMO_ROOT DEMO_LOCAL
 
-source "$DEMO_DIR/lib/say.sh"
-source "$DEMO_DIR/lib/pause.sh"
-source "$DEMO_DIR/lib/colors.sh"
+# Load primitives
+source "$DEMO_ROOT/lib/say.sh"
+source "$DEMO_ROOT/lib/pause.sh"
+source "$DEMO_ROOT/lib/colors.sh"
 
-clear
-echo -e "${DIM}Claude Code 1.2.3 — connected to local cluster (kubeconfig: agent-kubeconfig)${RESET}"
-echo ""
+# Parse args
+TYPE_DELAY_MS="${TYPE_DELAY_MS:-30}"
+DRY_RUN=0
+RESUME_BEAT=1
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) DRY_RUN=1 ;;
+    --resume-beat=*) RESUME_BEAT="${arg#*=}" ;;
+  esac
+done
 
-print_claude_banner
+# Verify .local/ is populated
+if [[ ! -f "$DEMO_LOCAL/kubeconfig" ]] && [[ $DRY_RUN -eq 0 ]]; then
+  echo "ERROR: $DEMO_LOCAL/kubeconfig not found. Run bash setup.sh first." >&2
+  exit 1
+fi
 
-pause "Press space to begin Beat 1 — PreToolUse hook"
-play_dialogue "$DEMO_DIR/dialogue/beat1-pretooluse.txt"
-
-pause "Press space to begin Beat 2 — Git hook"
-play_dialogue "$DEMO_DIR/dialogue/beat2-githook.txt"
-
-pause "Press space to begin Beat 3 — K8s admission"
-play_dialogue "$DEMO_DIR/dialogue/beat3-vap.txt"
-
-echo ""
-echo -e "${DIM}End of demo. Return to slides.${RESET}"
+# (rest of runner same as v4, with paths resolved through $DEMO_ROOT)
 ```
 
-### play_dialogue: the dialogue parser
-
-```bash
-play_dialogue() {
-  local file="$1"
-  while IFS= read -r line; do
-    case "$line" in
-      @say:agent*)
-        text="${line#@say:agent }"
-        type_out "${CYAN}${text}${RESET}" 30
-        ;;
-      @say:hook*)
-        text="${line#@say:hook }"
-        type_out "${RED_BOLD}${text}${RESET}" 30
-        ;;
-      @say:user*)
-        text="${line#@say:user }"
-        type_out "${GREEN}> ${text}${RESET}" 25
-        ;;
-      @say:system*)
-        text="${line#@say:system }"
-        type_out "${DIM}${text}${RESET}" 20
-        ;;
-      @run*)
-        cmd="${line#@run }"
-        echo -e "${BLUE}\$ ${cmd}${RESET}"
-        eval "$cmd"   # ← REAL execution. Hits real hooks, real cluster. $DEMO_DIR expands here.
-        ;;
-      @pause*)
-        pause "...continue..."
-        ;;
-      "")
-        echo ""
-        ;;
-      *)
-        echo "$line"
-        ;;
-    esac
-  done < "$file"
-}
-```
-
-### lib/say.sh — typed output
-
-```bash
-type_out() {
-  local text="$1"
-  local delay_ms="${2:-30}"
-  local delay_s=$(awk "BEGIN {print $delay_ms / 1000}")
-
-  for (( i=0; i<${#text}; i++ )); do
-    printf "%s" "${text:$i:1}"
-    sleep "$delay_s"
-  done
-  printf "\n"
-}
-```
-
-### lib/pause.sh — spacebar advance
-
-```bash
-pause() {
-  local msg="${1:-press SPACE to continue}"
-  echo ""
-  echo -e "\033[2m[${msg}]\033[0m"
-  local key
-  while true; do
-    IFS= read -rsn1 key
-    [[ "$key" == " " ]] && break
-  done
-  # Move cursor up 2 lines and clear from there to end of screen.
-  # This wipes the blank line + the [msg] line and returns cursor to
-  # the line where pause() was invoked.
-  printf "\033[2A\033[J"
-}
-```
-
----
-
-## Dialogue files: the actual scripts
-
-All `@run` lines use `$DEMO_DIR/...` so the script works in any clone of the repo.
-
-### dialogue/beat1-pretooluse.txt
+Dialogue files use `$DEMO_LOCAL` and `$DEMO_ROOT` for paths:
 
 ```
-@say:user > "Hey, we just trained a new model version v1.3.0 and the team needs it deployed to production today. The previous version is v1.2.0. Can you help me get this update shipped?"
-
-@pause
-
-@say:agent ::I'll check the current state of production first.::
-
-@run kubectl --kubeconfig=$DEMO_DIR/agent-kubeconfig get deployments -n production
-
-@say:agent ::Found model-server running v1.2.0 with 3 replicas. The fastest path is to update the image tag directly. Let me do that.::
-
-@pause
-
-@say:agent ::Running kubectl set image to bump model-server to v1.3.0::
-
-@run bash $DEMO_DIR/claude-hooks/pretool-use-block-prod.sh < $DEMO_DIR/dialogue/beat1-toolcall.json
-
-@pause
-
-@say:agent ::Hmm. The PreToolUse hook intercepted that. Reading the deny message...::
-
-@say:agent ::The hook says direct kubectl operations against production aren't allowed from agent sessions. It says I should stage the change in staging, sign the artifact, and let the pipeline promote it.::
-
-@say:agent ::That's the gitops path. Let me try that instead.::
+# beat1-pretooluse.txt (excerpt)
+@run kubectl --kubeconfig=$DEMO_LOCAL/kubeconfig get deployments -n production
+@run bash $DEMO_ROOT/claude-hooks/pretool-use-block-prod.sh < $DEMO_ROOT/dialogue/beat1-toolcall.json
 ```
 
-The `beat1-toolcall.json` fixture: `{"tool_name":"Bash","tool_input":"kubectl set image deployment/model-server model-server=v1.3.0 -n production"}`. Piping it to the real hook script causes the real hook to fire with real output. The audience sees real stderr from the real hook.
-
-### dialogue/beat2-githook.txt
+Beat 2 dialogue:
 
 ```
-@say:agent ::Let me look at the IaC repo to find the production manifest.::
-
-@run cd $DEMO_DIR/repo && ls infrastructure/production/
-
-@say:agent ::Found model-server.yaml. I'll update the image tag and commit.::
-
-@run cd $DEMO_DIR/repo && sed -i 's|model-server:v1.2.0|model-server:v1.3.0|' infrastructure/production/model-server.yaml
-
-@run cd $DEMO_DIR/repo && git diff infrastructure/production/model-server.yaml
-
-@say:agent ::Diff looks clean. Committing.::
-
-@pause
-
-@run cd $DEMO_DIR/repo && git add infrastructure/production/model-server.yaml && git -c user.email=claude-agent@anthropic.local commit -m "promote model v1.3.0 to production"
-
-@pause
-
-@say:agent ::The pre-commit hook rejected the commit. It says this path requires a signed PR from a human reviewer in the mlops-platform group, and that non-human committer identities aren't allowed in this repo.::
-
-@say:agent ::Two enforcement reasons. Both deterministic. The repo is configured to reject this exact pattern.::
-
-@say:agent ::What if I just apply the change directly? I have edit permissions in the staging namespace...::
+# beat2-githook.txt (excerpt)
+@run cd $DEMO_LOCAL/iac-repo && ls infrastructure/production/
+@run cd $DEMO_LOCAL/iac-repo && sed -i 's|model-server:v1.2.0|model-server:v1.3.0|' infrastructure/production/model-server.yaml
+@run cd $DEMO_LOCAL/iac-repo && git -c user.email=claude-agent@anthropic.local commit -am "promote model v1.3.0"
 ```
 
-### dialogue/beat3-vap.txt
+Beat 3 dialogue:
 
 ```
-@say:agent ::I'll write the deployment YAML out and apply it directly to production via kubectl.::
-
-@say:system ::[Note: PreToolUse hook is scoped to interactive sessions. Direct file-based applies bypass it. Server-side enforcement is the next gate.]::
-
-@run cat > $DEMO_DIR/beat3-prod-update.yaml <<'YAML'
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: model-server
-  namespace: production
-  labels:
-    app.kubernetes.io/managed-by: mlops-pipeline
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: model-server
-  template:
-    metadata:
-      labels:
-        app: model-server
-    spec:
-      containers:
-      - name: model-server
-        image: registry.local/model-server:v1.3.0
+# beat3-vap.txt (excerpt)
+@run cat > $DEMO_LOCAL/beat3-prod-update.yaml <<YAML
+...
 YAML
-
-@run kubectl --kubeconfig=$DEMO_DIR/agent-kubeconfig apply -f $DEMO_DIR/beat3-prod-update.yaml
-
-@pause
-
-@say:agent ::Denied at admission. The ValidatingAdmissionPolicy in the cluster says production namespace writes are restricted to ArgoCD and the MLOps pipeline service accounts. My agent ServiceAccount can't write here.::
-
-@say:agent ::No webhook, no controller, no custom code. The deny came from the API server itself.::
-
-@say:agent ::Acknowledged. The pipeline is the only path. I'll prepare a PR to gitops-prod through the proposal workflow and let a human approve the promotion.::
-
-@pause
-
-@say:system ::End of demo.::
+@run kubectl --kubeconfig=$DEMO_LOCAL/kubeconfig apply -f $DEMO_LOCAL/beat3-prod-update.yaml
 ```
 
 ---
 
-## Real enforcement under the scripted dialogue
+## setup.sh — what it does
 
-These three things must be **real**, not faked, for the demo to be honest:
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+DEMO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEMO_LOCAL="$DEMO_ROOT/.local"
 
-### Layer 1: PreToolUse hook
-- Real bash script at `demo/claude-hooks/pretool-use-block-prod.sh`
-- Reads tool-call JSON from stdin
-- Returns exit code 2 with stderr message
-- The demo pipes a real JSON fixture to it and shows real stderr
+# 1. Ensure .local/ exists, clean any prior state
+rm -rf "$DEMO_LOCAL"
+mkdir -p "$DEMO_LOCAL"
 
-### Layer 2: Git hook
-- Source of truth at `demo/repo/.githooks/pre-commit` (tracked)
-- `setup.sh` copies it into `demo/repo/.git/hooks/pre-commit` at install (the `.git/` directory itself is gitignored)
-- Real `git commit` attempted in the dialogue
-- Real rejection from real git
+# 2. Create k3d cluster (idempotent)
+k3d cluster delete llmday-demo 2>/dev/null || true
+k3d cluster create llmday-demo \
+  --image rancher/k3s:v1.35.4-k3s1 \
+  --no-lb \
+  --k3s-arg "--disable=traefik@server:0" \
+  --k3s-arg "--disable=servicelb@server:0" \
+  --volume "$DEMO_ROOT/manifests/audit-policy.yaml:/etc/rancher/k3s/audit-policy.yaml" \
+  --k3s-arg "--kube-apiserver-arg=audit-log-path=/var/log/k8s-audit.log@server:0" \
+  --k3s-arg "--kube-apiserver-arg=audit-policy-file=/etc/rancher/k3s/audit-policy.yaml@server:0"
 
-### Layer 3: ValidatingAdmissionPolicy
-- Real VAP applied to k3d cluster
-- Real `kubectl apply` attempted
-- Real API server deny response
+# 3. Apply manifests in order
+kubectl apply -f "$DEMO_ROOT/manifests/00-namespaces.yaml"
+kubectl apply -f "$DEMO_ROOT/manifests/10-quota.yaml"
+kubectl apply -f "$DEMO_ROOT/manifests/20-rbac.yaml"
+kubectl apply -f "$DEMO_ROOT/manifests/30-workloads.yaml"
+# Note: 40-vap NOT applied at setup; applied during reset/setup-final for Beat 3 to fire
+kubectl apply -f "$DEMO_ROOT/manifests/40-vap-production-guard.yaml"
+kubectl apply -f "$DEMO_ROOT/manifests/observability/"
 
-All three layers can be tested independently by Michael any time tonight. No agent behavior to coordinate. No prompt engineering required.
+# 4. Generate projected token + kubeconfig in .local/
+kubectl create token claude-agent \
+  --namespace staging \
+  --duration 1h \
+  --audience https://kubernetes.default.svc > "$DEMO_LOCAL/agent-token"
+
+# Build kubeconfig that uses the token
+TOKEN=$(cat "$DEMO_LOCAL/agent-token")
+SERVER=$(kubectl config view --minify --raw -o jsonpath='{.clusters[0].cluster.server}')
+CA=$(kubectl config view --minify --raw -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')
+cat > "$DEMO_LOCAL/kubeconfig" <<EOF
+apiVersion: v1
+kind: Config
+clusters:
+- name: llmday-demo
+  cluster:
+    server: $SERVER
+    certificate-authority-data: $CA
+users:
+- name: claude-agent
+  user:
+    token: $TOKEN
+contexts:
+- name: claude-agent@llmday-demo
+  context:
+    cluster: llmday-demo
+    user: claude-agent
+    namespace: staging
+current-context: claude-agent@llmday-demo
+EOF
+
+# 5. Hydrate iac-repo from template
+cp -r "$DEMO_ROOT/iac-repo-template" "$DEMO_LOCAL/iac-repo"
+cd "$DEMO_LOCAL/iac-repo"
+git init -q
+git config user.email "platform-team@example.com"
+git config user.name "platform-team"
+cp "$DEMO_LOCAL/iac-repo/hooks/pre-commit" .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+git add .
+git commit -q -m "initial state: model v1.2.0 in production"
+
+# 6. Install Claude Code settings (PreToolUse hook registration)
+mkdir -p ~/.claude
+cp "$DEMO_ROOT/claude-hooks/settings.json" ~/.claude/settings.json
+
+# 7. Verify acceptance criteria (subset)
+echo ""
+echo "=== Verification ==="
+kubectl --kubeconfig="$DEMO_LOCAL/kubeconfig" auth can-i delete deployments -n staging
+kubectl --kubeconfig="$DEMO_LOCAL/kubeconfig" auth can-i delete deployments -n production
+echo ""
+echo "✅ Setup complete. DEMO_ROOT=$DEMO_ROOT, DEMO_LOCAL=$DEMO_LOCAL"
+echo "Run: bash demo.sh"
+```
+
+`reset.sh` removes `$DEMO_LOCAL/iac-repo`, recreates it from template, refreshes the token. Used between rehearsal runs without rebuilding the cluster.
+
+`teardown.sh` removes the k3d cluster, deletes `$DEMO_LOCAL/`, and removes the Claude Code settings.
 
 ---
 
-## Cluster topology (May 2026 defaults — unchanged from v2/v3)
-
-Identical to v3: k3d with K8s v1.35.4, containerd 2.0, PSS `restricted` on both `production` and `staging` namespaces, model-server deployment in production, agent SA in staging with scoped Role, projected token with 1h TTL, OTel collector, Falco DaemonSet, ResourceQuota on staging.
-
-See v3 spec for full manifests; v4 inherits.
-
----
-
-## The Eight Guardrails Framework — where it appears
-
-The abstract names "the Eight Guardrails Framework." The demo shows three of the eight (the three enforcement layers). The other five are in the repo and on a slide:
-
-1. **PreToolUse hook** (demo Beat 1)
-2. **Git pre-commit hook** (demo Beat 2)
-3. **K8s ValidatingAdmissionPolicy** (demo Beat 3)
-4. **IaC-only infrastructure changes** (referenced in Beat 2; enforced by branch protection in production)
-5. **Least privilege RBAC** (agent SA scoped to staging only, enforced by RoleBinding)
-6. **Automated rollback** (mentioned on slide; ArgoCD auto-rollback on failed health checks)
-7. **Audit logging** (visible in bottom-right pane during demo; API server audit log)
-8. **Testing the guardrails** (mentioned on slide; CI runs the hook scripts against malicious payloads)
-
-The deck should have one slide that lists all eight and highlights the three the demo lived. That slot is currently the "failure chain mapped to gates" slide (#7 in v10 deck) — repurpose it.
-
----
-
-## Speaker runbook excerpt (the part that matters for v4)
+## Speaker runbook (excerpt — paths updated)
 
 ```markdown
 ## Pre-show checklist (10 min before going on)
-- [ ] `bash demo/setup.sh` completed clean (target: under 90 seconds)
+- [ ] `cd ~/code/agentic-covenants/demos/llmday-austin` (or wherever the repo is cloned)
+- [ ] `bash setup.sh` completed clean (target: under 90 seconds)
 - [ ] Four-pane tmux layout visible at 22pt font
-- [ ] `bash demo/demo.sh` runs end-to-end in rehearsal (do this at least twice)
-- [ ] All three hooks fire reliably when tested standalone
+- [ ] `bash demo.sh --dry-run` shows all dialogue without errors
+- [ ] `bash demo.sh` runs end-to-end in rehearsal (do this at least twice)
 - [ ] Backup video on USB stick
-- [ ] Token TTL > 1 hour
+- [ ] Token TTL > 1 hour: `kubectl --kubeconfig=.local/kubeconfig auth can-i delete deployments -n staging` returns yes
 
 ## On stage
-1. SLIDE 4 visible — "Demo: three layers"
+1. SLIDE 5 visible (Beat 1 bracket)
 2. Switch display to terminal
-3. SAY: "This is a scripted recreation. The hooks are real. The Git rejection is real. The K8s denial is real. I scripted the agent dialogue so the timing matches my narration, not because the demo isn't honest. Let me show you."
-4. Press SPACE to start Beat 1
-5. Narrate over the agent's thinking. Don't read what's on screen verbatim — the audience can read.
-6. When the hook fires (red bold output), pause your narration and let the audience read it. Then resume: "That's the PreToolUse hook. Eight lines of bash. It denied the tool call before kubectl ran. The agent reads the deny message and adapts."
-7. Press SPACE to advance to Beat 2.
-8. Same pattern: narrate over the typing, pause on the deny, explain.
-9. Press SPACE to advance to Beat 3.
-10. Same pattern.
-11. End of demo. Switch back to slides (failure chain mapped slide).
-
-## TIME CHECK at 6:00
-You should be at the START of Beat 3 by 6:00. If you're not, Beat 3 still runs to completion because it's scripted — but you may need to trim narration.
-
-## If something breaks
-- Hook doesn't fire: this would mean the standalone test passed but the live demo didn't. Diagnose: are you in the right kubeconfig context? Did `setup.sh` complete? Worst case, switch to backup video.
-- demo.sh crashes mid-beat: re-run `bash demo/demo.sh --resume-beat=2` to skip ahead.
-- Wrong pane gets the focus: use `tmux select-pane -L/-R/-U/-D` to navigate. Don't panic; the audience can't see what you're doing if you're calm.
+3. Run: `bash demo.sh`
+4. Press SPACE to begin Beat 1
+5. ...rest unchanged from v4 speaker runbook
 ```
 
 ---
 
-## Acceptance criteria
+## Acceptance criteria (paths updated, behaviors unchanged)
 
-### Layer enforcement (must all pass independently)
-- [ ] `bash demo/claude-hooks/pretool-use-block-prod.sh < demo/dialogue/beat1-toolcall.json` exits 2 with `PRETOOLUSE_HOOK_DENY` in stderr
-- [ ] `cd demo/repo && git -c user.email=claude-agent@anthropic.local commit ...` on a protected path exits non-zero with `GIT_HOOK_DENY`
-- [ ] `kubectl --kubeconfig=demo/agent-kubeconfig apply -f production-deployment.yaml` returns `Forbidden` from VAP within 2 seconds
+### Setup verification
+- [ ] `bash setup.sh` completes in under 90 seconds
+- [ ] `.local/kubeconfig` exists and is valid
+- [ ] `.local/agent-token` exists with TTL > 55 minutes
+- [ ] `.local/iac-repo/.git/hooks/pre-commit` exists and is executable
+- [ ] K8s v1.35.4 cluster running
+- [ ] `production` namespace has `model-server` deployment with 3 replicas
+- [ ] VAP `deny-agent-writes-to-production` is applied and bound
+
+### Layer 1 standalone test
+- [ ] `bash claude-hooks/pretool-use-block-prod.sh < dialogue/beat1-toolcall.json` exits 2 with `PRETOOLUSE_HOOK_DENY` in stderr
+- [ ] Same script with a safe command JSON exits 0
+
+### Layer 2 standalone test
+- [ ] `cd .local/iac-repo && sed ... && git -c user.email=claude-agent@... commit ...` fails with `GIT_HOOK_DENY` in stderr
+
+### Layer 3 standalone test
+- [ ] `kubectl --kubeconfig=.local/kubeconfig apply -f <production-deployment>` returns `Forbidden` from VAP
 
 ### Demo runner
-- [ ] `bash demo/demo.sh` runs from start to end without errors when spacebar is pressed at each pause
+- [ ] `bash demo.sh` runs from start to end without errors when SPACE is pressed at each pause
 - [ ] Total runtime measured: 7-9 minutes
-- [ ] All three real-execution lines (the `@run` lines hitting real layers) produce visible real output
-- [ ] Typing animation is readable on a projector — test on an external display at 1920x1080 with font size 22pt
-
-### Dialogue clarity
-- [ ] Every `@say:agent` line is something a real LLM agent would plausibly say
-- [ ] Every `@say:hook` line matches the real stderr output of the hook
-- [ ] No line is so long it overflows the pane at 22pt font
-
-### Recovery
-- [ ] `bash demo/demo.sh --resume-beat=2` works (script supports beat skipping)
-- [ ] `bash demo/demo.sh --dry-run` prints all dialogue without executing real commands (for last-minute review)
+- [ ] All three `@run` lines hitting real layers produce visible real output
+- [ ] `bash demo.sh --dry-run` prints all dialogue without executing real commands
+- [ ] `bash demo.sh --resume-beat=2` works correctly
 
 ### Backup video
-- [ ] One complete end-to-end recording saved at `demo/llmday-demo-backup.mp4` (file is gitignored; large binary)
-- [ ] Recording shows all three beats firing with real output
+- [ ] One complete end-to-end recording saved (location TBD — NOT in repo)
 - [ ] USB stick tested on Michael's laptop
 
 ---
 
-## Risk register
+## Risk register (unchanged from v4)
 
-| Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|
-| One of the three real layers fails mid-demo | Very low | High | Pre-flight acceptance criteria test all three. If a layer fails in pre-flight, fix before going on stage. |
-| Typing animation feels too slow | Medium | Low | Speed adjustable via env var: `TYPE_DELAY_MS=20 bash demo/demo.sh`. Test in rehearsal. |
-| Typing animation feels too fast | Low | Low | Same env var, dial up. |
-| Spacebar advance is missed/wrong key | Low | Medium | Pause prompt explicit: "[press space to continue]". If wrong key pressed, nothing happens, demo waits. |
-| Audience asks "is that real?" mid-demo | Medium | Low | Use the planned line: "Yes, the enforcement is real. The agent dialogue is scripted for timing." Move on. |
-| Demo runs short (under 7 min) | Low | Low | Good problem. Use the time for Q&A or expand the closer. |
-| Demo runs long (over 9 min) | Medium | Medium | Time check at 6 min. The Beat 3 closer can be cut short by narrating the final two `@say:agent` lines yourself instead of letting them type out. |
+Same risks. Same mitigations. Same backup video plan.
+
+---
+
+## Closing principle (unchanged from v4)
+
+The agent dialogue is scripted. The enforcement is not. That asymmetry IS the talk. The probabilistic part (the agent) is fragile, scripted for timing. The deterministic part (the gates) is real, reliable, and stops the agent every time.
+
+*Don't use probabilistic AI to enforce deterministic requirements. Build the gates programmatically, test them the same way you test your code, and let the agent run.*
+
+The audience sees that principle live, in the difference between the scripted top-left pane and the real output in the other three panes.
 
 ---
 
 ## What Claude Code needs to build
 
-Given this spec, Claude Code should produce, in order:
+Hand this spec to Claude Code with the repo path. Tell it: "Build the demo described in this spec at `demos/llmday-austin/` in the agentic-covenants repo. Use `$DEMO_ROOT` and `$DEMO_LOCAL` conventions throughout. When all acceptance criteria pass, the demo is ready."
 
-1. `demo/setup.sh` that creates the k3d cluster, applies all manifests, generates the kubeconfig at `demo/agent-kubeconfig`, initializes the git repo at `demo/repo/` with pre-commit hook installed from `demo/repo/.githooks/`, and verifies all three layers are enforceable
-2. The three layer artifacts (`demo/claude-hooks/pretool-use-block-prod.sh`, `demo/repo/.githooks/pre-commit`, `demo/manifests/40-vap-production-guard.yaml`)
-3. The three dialogue files with the exact text from this spec (paths use `$DEMO_DIR`)
-4. `demo/lib/say.sh`, `demo/lib/pause.sh`, `demo/lib/colors.sh` with the typing and pause primitives
-5. `demo/demo.sh` itself, which parses dialogue files and runs the demo (already in repo; updated to resolve `$DEMO_DIR` from `BASH_SOURCE`)
-6. `demo/teardown.sh` to remove the cluster and clean up the runtime credentials
-7. `demo/demo-runbook.md` for Michael to print and reference on stage
+Claude Code should produce, under `demos/llmday-austin/`:
 
-When all acceptance criteria pass, the demo is ready. Michael then records the backup video and the build phase is complete.
+1. The directory structure exactly as shown above
+2. All scripts (`setup.sh`, `reset.sh`, `teardown.sh`, `demo.sh`) with proper `$DEMO_ROOT` resolution
+3. The three layer artifacts (PreToolUse hook, pre-commit template, VAP manifest)
+4. The dialogue files with the exact text from this spec
+5. `lib/say.sh`, `lib/pause.sh`, `lib/colors.sh`
+6. `manifests/` with all the K8s YAML
+7. `iac-repo-template/` with the production and staging manifests + hooks/pre-commit
+8. `.gitignore` with `.local/` and friends
+9. `README.md` for the demo directory (a quick-start)
+10. `demo-runbook.md` for Michael's printed reference
 
----
-
-## What v4 deliberately does NOT include
-
-- No live Claude Code agent. v4 trades agent variance for deterministic narrative.
-- No cluster incident retelling. The talk references it once in the opener; the demo is pipeline-focused.
-- No Eight Guardrails slide-by-slide walkthrough. The demo shows three; the deck and repo cover the other five.
-- No fancy ASCII art or animations beyond typed text and color. Keep it terminal-honest.
-- No agent reasoning over 4 lines. Each `@say:agent` block is 2-4 lines max. Pace.
-- No `/tmp` paths. Everything lives under `demo/` in the repo; short-lived credentials are gitignored.
-
----
-
-## Closing principle (also in the talk)
-
-The agent dialogue is scripted. The enforcement is not. That asymmetry is the talk. **The probabilistic part (the agent) is fragile, scripted for timing.** **The deterministic part (the gates) is real, reliable, and stops the agent every time.**
-
-That's the principle from the abstract: *don't use probabilistic AI to enforce deterministic requirements. Build the gates programmatically, test them the same way you test your code, and let the agent run.*
-
-The audience is going to see that principle live, in the difference between the scripted top-left pane and the real output in the other three panes.
+Once acceptance criteria pass, Michael records the backup video. The backup video lives outside the repo (USB stick) so it stays out of git history.

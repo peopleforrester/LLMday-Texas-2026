@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
-# demo.sh — LLMday Austin scripted demo runner
+# demo.sh — LLMday Austin scripted demo runner (v2 — repo-based paths)
 # Usage: bash demo.sh [--dry-run] [--resume-beat=N]
 #
 # The agent dialogue is scripted. The enforcement is real.
 # Spacebar advances at major beat transitions.
 #
-# All paths resolve under DEMO_DIR, which defaults to the directory
-# this script lives in. Everything stays inside the repo; nothing in /tmp.
+# Resolves $DEMO_ROOT from the script location, so this works from
+# wherever the agentic-covenants repo is cloned.
 
 set -euo pipefail
 
-# Resolve to the script's own directory unless overridden
-DEMO_DIR="${DEMO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
-export DEMO_DIR
+# Resolve repo-relative paths
+DEMO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEMO_LOCAL="$DEMO_ROOT/.local"
+export DEMO_ROOT DEMO_LOCAL
 
 TYPE_DELAY_MS="${TYPE_DELAY_MS:-30}"
 DRY_RUN=0
@@ -25,6 +26,15 @@ for arg in "$@"; do
     *) echo "unknown arg: $arg" >&2; exit 1 ;;
   esac
 done
+
+# Sanity check that setup.sh has run
+if [[ $DRY_RUN -eq 0 && ! -f "$DEMO_LOCAL/kubeconfig" ]]; then
+  echo ""
+  echo "ERROR: $DEMO_LOCAL/kubeconfig not found." >&2
+  echo "Run 'bash $DEMO_ROOT/setup.sh' first." >&2
+  echo ""
+  exit 1
+fi
 
 # ============================================================
 # Colors
@@ -78,11 +88,8 @@ pause() {
     IFS= read -rsn1 key
     [[ "$key" == " " ]] && break
   done
-  # Move cursor up 2 lines and clear from there to end of screen.
-  # This wipes the blank line and the [msg] line cleanly and returns
-  # the cursor to the line where pause() was invoked, regardless of
-  # what (if anything) was on that line before.
-  printf "\033[2A\033[J"
+  # Clear pause prompt line
+  printf "\033[2A\033[2K\033[1B\033[2K\033[1A"
 }
 
 # ============================================================
@@ -90,11 +97,11 @@ pause() {
 # ============================================================
 print_banner() {
   clear
-  echo -e "${DIM}╭──────────────────────────────────────────────────────────────────╮${RESET}"
-  echo -e "${DIM}│  Claude Code 1.2.3                                               │${RESET}"
-  echo -e "${DIM}│  Connected: local k3d cluster (kubeconfig: agent-kubeconfig)     │${RESET}"
-  echo -e "${DIM}│  Workspace: ${DEMO_DIR}${RESET}"
-  echo -e "${DIM}╰──────────────────────────────────────────────────────────────────╯${RESET}"
+  echo -e "${DIM}╭─────────────────────────────────────────────────────────────╮${RESET}"
+  echo -e "${DIM}│  Claude Code 1.2.3                                          │${RESET}"
+  echo -e "${DIM}│  Connected: local k3d cluster                               │${RESET}"
+  echo -e "${DIM}│  Kubeconfig: ${DEMO_LOCAL/$HOME/~}/kubeconfig$(printf '%*s' $((25 - ${#DEMO_LOCAL} + 5)) '')│${RESET}"
+  echo -e "${DIM}╰─────────────────────────────────────────────────────────────╯${RESET}"
   echo ""
 }
 
@@ -105,7 +112,7 @@ play_dialogue() {
   local file="$1"
 
   if [[ ! -f "$file" ]]; then
-    echo "${RED}Dialogue file not found: $file${RESET}" >&2
+    echo -e "${RED}Dialogue file not found: $file${RESET}" >&2
     return 1
   fi
 
@@ -132,12 +139,14 @@ play_dialogue() {
         ;;
       "@run "*)
         local cmd="${line#@run }"
+        # Expand $DEMO_ROOT and $DEMO_LOCAL in the command
+        cmd="${cmd//\$DEMO_ROOT/$DEMO_ROOT}"
+        cmd="${cmd//\$DEMO_LOCAL/$DEMO_LOCAL}"
         echo -e "${BLUE}\$ ${cmd}${RESET}"
         if [[ $DRY_RUN -eq 1 ]]; then
           echo "  [DRY RUN — command not executed]"
         else
-          # Allow the command to fail (we WANT it to fail for hook/policy demos).
-          # $DEMO_DIR is exported above so it expands inside the eval'd command.
+          # Allow command to fail — we WANT it to fail at hook/policy points
           eval "$cmd" || true
         fi
         ;;
@@ -169,19 +178,19 @@ if [[ $RESUME_BEAT -le 1 ]]; then
   echo ""
   pause "press SPACE to begin Beat 1 — PreToolUse hook"
 
-  play_dialogue "$DEMO_DIR/dialogue/beat1-pretooluse.txt"
+  play_dialogue "$DEMO_ROOT/dialogue/beat1-pretooluse.txt"
 fi
 
 if [[ $RESUME_BEAT -le 2 ]]; then
   echo ""
   pause "press SPACE to begin Beat 2 — Git hook"
-  play_dialogue "$DEMO_DIR/dialogue/beat2-githook.txt"
+  play_dialogue "$DEMO_ROOT/dialogue/beat2-githook.txt"
 fi
 
 if [[ $RESUME_BEAT -le 3 ]]; then
   echo ""
   pause "press SPACE to begin Beat 3 — K8s admission"
-  play_dialogue "$DEMO_DIR/dialogue/beat3-vap.txt"
+  play_dialogue "$DEMO_ROOT/dialogue/beat3-vap.txt"
 fi
 
 echo ""
