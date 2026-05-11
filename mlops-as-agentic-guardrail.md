@@ -37,9 +37,19 @@ Drift detection watches a model's output distribution drift from its training di
 
 Rollback automation in MLOps reverts to a known-good model when the new one degrades. For agents in a GitOps world, that is ArgoCD self-heal pulling the cluster back to the last committed state. Recovery is the covenant that turns "we broke it" into "the pipeline already fixed it."
 
-## What this changes about the talk
+## How the Eight Guardrails became three layers and five concerns
 
-The Eight Guardrails Framework I will walk through at LLMday Austin lives on top of this mapping. Three enforcement layers (Claude Code pre-tool-use hooks, Git hooks, Kubernetes infrastructure controls) implement the covenants in concrete code. The matrix gives you the structural map; the guardrails are how that map gets enforced in a running cluster.
+The version of this argument I first sketched out called the implementation an Eight Guardrails Framework. Writing the talk forced me to clean it up. Two of the eight were the same idea said twice. Three were three mechanisms answering the same question. One was a detection control hiding in a list labeled Prevention. The honest restructure is what the talk uses now: three enforcement layers (in-agent, client-side hooks, server-side) crossed with five concerns (identity, authorization, blast radius, approval gating, supply chain). Fifteen cells. Same content as the original eight, sharper structure, and explicitly scoped to NIST CSF 2.0's Protect function so it composes with separate matrices for Detect, Respond, and Recover instead of pretending to do all five.
+
+That structure is the Agentic Covenants Matrix, the centerpiece of a broader prevention model called the Agentic Covenants Framework. The matrix asks one question per row: if the agent decides to violate this concern, what stops it at this layer?
+
+The in-agent layer (system prompts, tool descriptions, refusal training) is a nudge, not a control. Language attacks bypass it, prompt injection bypasses it, and compaction wipes the rules. Treat it as a vibe.
+
+The client-side hooks layer (PreToolUse hooks, allowedTools allowlists, pre-commit hooks on protected paths) sits outside the model's reasoning and cannot be talked around with prompts. It catches casual misuse. It falls to `--no-verify`, to equivalent commands the pattern doesn't match, and to filesystem tampering when the agent has write access. Don't put your one bet here.
+
+The server-side layer (scoped RBAC, IAM scoped to ARN, Kyverno or OPA admission policies, registry stage transitions) lives on the target system, not the agent. It is the only layer that requires a separate principal compromise to defeat. The other two layers can be talked around. This one cannot, until the agent escapes its own runtime. That makes server-side different in kind, not just in degree.
+
+The MLOps mapping is how those layers connect to a pipeline you already run. Feature store, model registry, validation gates, canary deployment: those are server-side controls dressed in MLOps vocabulary.
 
 The argument I want platform teams to hear is uncomfortable in a useful way: the discipline you built for ML systems was always about controlling probabilistic behavior in production, and agents are the next probabilistic thing in production. The pipeline you already run is most of the safety story for agentic AI, once you recognize the consumer has changed.
 
