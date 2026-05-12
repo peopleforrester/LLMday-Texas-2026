@@ -110,10 +110,35 @@ play_dialogue() {
         ;;
       "@run "*)
         local cmd="${line#@run }"
+        # Detect a heredoc on this @run line and slurp subsequent dialogue
+        # lines into the command until we hit the terminator on its own
+        # line. Without this, multi-line heredocs (Beat 3's YAML write)
+        # would only get the first line eval'd; the heredoc body would
+        # arrive at bash on later iterations of this while loop, garbled.
+        if [[ "$cmd" =~ \<\<-?[\'\"]?([A-Za-z_][A-Za-z0-9_]*)[\'\"]? ]]; then
+          local heredoc_tag="${BASH_REMATCH[1]}"
+          local heredoc_line
+          while IFS= read -r heredoc_line; do
+            cmd+=$'\n'"$heredoc_line"
+            if [[ "$heredoc_line" == "$heredoc_tag" ]]; then
+              break
+            fi
+          done
+        fi
         # Expand $DEMO_ROOT and $DEMO_LOCAL in the command (literals in dialogue)
         cmd="${cmd//\$DEMO_ROOT/$DEMO_ROOT}"
         cmd="${cmd//\$DEMO_LOCAL/$DEMO_LOCAL}"
-        echo -e "${BLUE}\$ ${cmd}${RESET}"
+        # Print the command. Multi-line commands get a "$ " on the first
+        # line; continuation lines print as-is so the audience sees the
+        # heredoc body in natural form.
+        if [[ "$cmd" == *$'\n'* ]]; then
+          local first_line="${cmd%%$'\n'*}"
+          local rest="${cmd#*$'\n'}"
+          echo -e "${BLUE}\$ ${first_line}${RESET}"
+          echo -e "${BLUE}${rest}${RESET}"
+        else
+          echo -e "${BLUE}\$ ${cmd}${RESET}"
+        fi
         if [[ $DRY_RUN -eq 1 ]]; then
           echo "  [DRY RUN — command not executed]"
         else
