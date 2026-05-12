@@ -87,6 +87,61 @@ print_banner() {
 }
 
 # ============================================================
+# ASCII memes — inter-beat comic relief.
+# Use sparingly. Each shows up between beats; speaker narrates over it.
+# ============================================================
+show_meme() {
+  local name="$1"
+  echo ""
+  case "$name" in
+    creeper)
+      echo -e "${GREEN}"
+      cat <<'EOF'
+                ┌─────────────────────┐
+                │                     │
+                │    ████       ████  │
+                │    ████       ████  │
+                │                     │
+                │        █████        │
+                │        █████        │
+                │     ███████████     │
+                │     ████   ████     │
+                │     ████   ████     │
+                │                     │
+                └─────────────────────┘
+                        S  S  S  S  .  .  .
+EOF
+      echo -e "${RESET}"
+      echo ""
+      echo -e "                   ${YELLOW}\"Aw, man.\"${RESET}"
+      echo -e "    ${WHITE}— every agent after the PreToolUse hook fires${RESET}"
+      ;;
+    enderdragon)
+      echo -e "${MAGENTA}"
+      cat <<'EOF'
+                  __----~~~~~~~~~~~~----__
+            __--~~                          ~~--__
+         /~                                        ~\
+        |       ●                            ●       |
+        |                                            |
+        |                ╲                ╱          |
+         \                ╲    ━━━━━    ╱           /
+          \                ╲___________╱           /
+           ~~___                                ___~~
+                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+              T H E   E N D E R   D R A G O N
+EOF
+      echo -e "${RESET}"
+      echo ""
+      echo -e "          ${CYAN}server-side enforcement: the final gate${RESET}"
+      echo -e "         ${WHITE}RBAC said yes. The cluster said no.${RESET}"
+      ;;
+  esac
+  echo ""
+}
+
+# ============================================================
 # Dialogue file parser
 # ============================================================
 play_dialogue() {
@@ -211,6 +266,8 @@ if [[ $RESUME_BEAT -le 1 ]]; then
   clear
   print_banner
   play_dialogue "$DEMO_ROOT/dialogue/beat1-pretooluse.txt"
+  # Beat 1 just ended on a deny. Creeper rolls up.
+  show_meme creeper
 fi
 
 if [[ $RESUME_BEAT -le 2 ]]; then
@@ -230,7 +287,9 @@ if [[ $RESUME_BEAT -le 3 ]]; then
 fi
 
 echo ""
-echo -e "${DIM}End of demo. Return to slides.${RESET}"
+echo -e "${MAGENTA}End of demo. Return to slides.${RESET}"
+# Ender Dragon: the final-boss server-side gate that held.
+show_meme enderdragon
 echo ""
 # Hold the final frame so the speaker isn't dumped to the shell prompt
 # mid-thought. Press SPACE to actually exit.
