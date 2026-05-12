@@ -110,13 +110,15 @@ _inner=$((_term_w - 2))
 (( _inner < 40 )) && _inner=40
 _bd=$(printf '─%.0s' $(seq 1 "$_inner"))
 echo -e "${MAGENTA}╭${_bd}╮${RESET}"
-printf "${MAGENTA}│${RESET} ${BOLD}${WHITE}%-*s${RESET} ${MAGENTA}│${RESET}\n" "$((_inner - 2))" "Three layers — the actual rule, setting, manifest"
+printf "${MAGENTA}│${RESET} ${BOLD}${WHITE}%-*s${RESET} ${MAGENTA}│${RESET}\n" "$((_inner - 2))" "Five layers — the actual rule, setting, manifest"
 printf "${MAGENTA}│${RESET} ${CYAN}%-*s${RESET} ${MAGENTA}│${RESET}\n" "$((_inner - 2))" "Each beat shown as its enforcement file on disk"
 echo -e "${MAGENTA}╰${_bd}╯${RESET}"
 echo ""
 echo -e "  ${CYAN}Beat 1${RESET} — ${WHITE}Claude Code PreToolUse hook${RESET} ${DIM}(bash, on this host)${RESET}"
 echo -e "  ${GREEN}Beat 2${RESET} — ${WHITE}Git pre-commit hook${RESET} ${DIM}(bash, inside the IaC repo)${RESET}"
 echo -e "  ${YELLOW}Beat 3${RESET} — ${WHITE}Kubernetes ValidatingAdmissionPolicy${RESET} ${DIM}(YAML, in the cluster)${RESET}"
+echo -e "  ${ORANGE}Beat 4${RESET} — ${WHITE}Falco custom rule + Talon binding${RESET} ${DIM}(YAML, runtime detection-and-response)${RESET}"
+echo -e "  ${MAGENTA}Beat 5${RESET} — ${WHITE}NetworkPolicy egress allowlist${RESET} ${DIM}(YAML, enforced by the CNI)${RESET}"
 echo ""
 auto_pause 6
 
@@ -148,15 +150,56 @@ show_file \
   "Kubernetes ValidatingAdmissionPolicy (in the cluster)" \
   "$DEMO_ROOT/gitops/manifests/vap/vap.yaml" \
   "Native admission policy (GA in K8s 1.30+). CEL expression, no webhook, no controller. matchConditions narrow to (a) writes to the production namespace AND (b) the claude-agent ServiceAccount specifically. validations.expression is 'false' — when both matchConditions hit, the request is denied. Bound to the production namespace via the matching ValidatingAdmissionPolicyBinding."
+auto_pause
+
+# ============================================================
+# Beat 4 — Falco custom rule + Talon binding
+# ============================================================
+show_file \
+  "Beat 4a" \
+  "Falco custom rule (mounted into every DaemonSet pod)" \
+  "$DEMO_ROOT/gitops/values/falco-values.yaml" \
+  "Helm values for the Falco chart. The customRules.llmday-rules.yaml entry becomes a file at /etc/falco/rules.d/llmday-rules.yaml in every Falco pod. Two rules defined: 'Agent exec in production' fires on a shell binary (sh, bash, ksh, ...) spawned inside a production-namespace pod with containerd-shim as its parent — the syscall signature of a kubectl exec. 'Read sensitive file in production' fires on /etc/shadow / /etc/sudoers reads. Falco emits the event; falcosidekick (also configured in this file) forwards it to Talon."
+auto_pause
+
+show_file \
+  "Beat 4b" \
+  "Falco Talon rule bindings (response engine)" \
+  "$DEMO_ROOT/gitops/values/falco-talon-values.yaml" \
+  "Helm values for falco-talon. config.rulesOverride binds the Falco rule names above to the kubernetes:terminate actionner. When a matching event arrives over HTTP from falcosidekick, Talon calls the K8s API to delete the originating pod (grace_period 5s). The ReplicaSet self-heals immediately. No human in the loop, no admission webhook involved — this is post-admission runtime response."
+auto_pause
+
+# ============================================================
+# Beat 5 — NetworkPolicy egress allowlist
+# ============================================================
+show_file \
+  "Beat 5a" \
+  "EKS Auto Mode NetworkPolicy enable knob" \
+  "$DEMO_ROOT/gitops/manifests/cluster-config/vpc-cni-network-policy.yaml" \
+  "ConfigMap in kube-system that turns the cluster's Network Policy Controller ON. Without this, EKS Auto Mode accepts NetworkPolicy resources but generates zero PolicyEndpoints and zero packet filtering. The embedded Auto Mode CNI watches this ConfigMap directly — no aws-node DaemonSet, no node restart required."
+auto_pause
+
+show_file \
+  "Beat 5b" \
+  "Production egress allowlist (NetworkPolicy)" \
+  "$DEMO_ROOT/gitops/manifests/networkpolicies/netpol.yaml" \
+  "Default-deny egress from every pod in the production namespace, with explicit allow rules: DNS (port 53 to the cluster service CIDR via ipBlock — Auto Mode runs DNS on the node OS, not as a kube-system pod, so the namespaceSelector idiom does NOT match here), intra-namespace production traffic, and the kubeflow (model registry) namespace. Anything not on the list is dropped at the wire. Falco doesn't fire, Talon doesn't run — the pod stays alive; the destination just isn't allowed."
 
 # ============================================================
 # Close
 # ============================================================
 echo ""
-echo -e "${BOLD}Three files. Three layers. Same agent gets caught three times.${RESET}"
+echo -e "${BOLD}Five files. Five layers. Same agent gets caught five different ways.${RESET}"
 echo ""
 echo -e "${DIM}  Beat 1 file:  $DEMO_ROOT/claude-hooks/pretool-use-block-prod.sh${RESET}"
 echo -e "${DIM}  Beat 2 file:  $DEMO_ROOT/iac-repo-template/hooks/pre-commit${RESET}"
 echo -e "${DIM}  Beat 3 file:  $DEMO_ROOT/gitops/manifests/vap/vap.yaml${RESET}"
+echo -e "${DIM}  Beat 4 files: $DEMO_ROOT/gitops/values/falco-values.yaml${RESET}"
+echo -e "${DIM}                $DEMO_ROOT/gitops/values/falco-talon-values.yaml${RESET}"
+echo -e "${DIM}  Beat 5 files: $DEMO_ROOT/gitops/manifests/cluster-config/vpc-cni-network-policy.yaml${RESET}"
+echo -e "${DIM}                $DEMO_ROOT/gitops/manifests/networkpolicies/netpol.yaml${RESET}"
+echo ""
+echo -e "${BOLD}Layers 1 through 5 keep the agent from breaking the system.${RESET}"
+echo -e "${BOLD}Layer 6 keeps the system from saying things it shouldn't.${RESET}"
 echo ""
 auto_pause 10

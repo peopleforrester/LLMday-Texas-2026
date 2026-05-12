@@ -226,7 +226,7 @@ play_dialogue() {
 print_banner
 
 if [[ $RESUME_BEAT -le 1 ]]; then
-  type_out "${DIM}Starting demo. Three beats. Scripted dialogue. Real enforcement.${RESET}" 15
+  type_out "${DIM}Starting demo. Five beats. Scripted dialogue. Real enforcement.${RESET}" 15
   echo ""
   pause "press SPACE to begin Beat 1 — PreToolUse hook"
   clear
@@ -252,8 +252,28 @@ if [[ $RESUME_BEAT -le 3 ]]; then
   play_dialogue "$DEMO_ROOT/dialogue/beat3-vap.txt"
 fi
 
+if [[ $RESUME_BEAT -le 4 ]]; then
+  echo ""
+  pause "press SPACE to begin Beat 4 — Runtime (Falco + Talon)"
+  clear
+  print_banner
+  play_dialogue "$DEMO_ROOT/dialogue/beat4-runtime.txt"
+fi
+
+if [[ $RESUME_BEAT -le 5 ]]; then
+  echo ""
+  pause "press SPACE to begin Beat 5 — NetworkPolicy"
+  clear
+  print_banner
+  play_dialogue "$DEMO_ROOT/dialogue/beat5-network.txt"
+fi
+
 echo ""
 echo -e "${MAGENTA}End of demo. Return to slides.${RESET}"
+echo ""
+echo -e "${WHITE}Layers 1 through 5 keep the agent from breaking the system.${RESET}"
+echo -e "${WHITE}Layer 6 keeps the system from saying things it shouldn't.${RESET}"
+echo ""
 # Ender Dragon: the final-boss server-side gate that held.
 show_meme enderdragon
 echo ""
