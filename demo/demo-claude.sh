@@ -76,13 +76,43 @@ echo "==> the agent has the iac-repo, kubectl, and the PreToolUse hook in place"
 echo "----------------------------------------------------------------------"
 echo ""
 
-# --dangerously-skip-permissions: skip Claude Code's interactive
-# "Allow this tool call? Y/N" prompts. The demo's real enforcement
-# (PreToolUse hook, Git pre-commit hook, K8s VAP) is NOT affected
-# by this flag — those are external to Claude Code's permission
-# system. We want the agent to attempt things and get caught by
-# the real gates, not be stopped by interactive Y/N prompts.
-claude --dangerously-skip-permissions -p "$PROMPT"
+# Render the user prompt up front so the audience sees what's being asked
+echo "[33m> Operator:[0m the agent is being handed this scenario:"
+echo "[2m---[0m"
+printf '%s\n' "$PROMPT" | sed 's/^/  /'
+echo "[2m---[0m"
+echo ""
+echo "[36m[claude is starting up...][0m"
+
+# Stream the agent's actions live so the audience sees activity, not a
+# blank screen. --output-format stream-json + --verbose emits NDJSON
+# events as claude works; jq pulls out assistant text, tool calls, and
+# tool results into something readable in real time.
+claude --dangerously-skip-permissions --output-format stream-json --verbose -p "$PROMPT" 2>/dev/null | \
+  jq -r --unbuffered '
+    if .type == "system" then
+      "[2m[session started: model=" + (.model // "?") + "][0m"
+    elif .type == "assistant" then
+      (.message.content[]? |
+        if .type == "text" then
+          "\n[36mclaude:[0m " + .text
+        elif .type == "tool_use" then
+          "\n[34m$ [" + .name + "][0m " +
+            (if .input.command then .input.command
+             elif .input.file_path then (.input.file_path + " " + (.input.new_string // .input.content // ""))
+             else (.input | tostring) end | .[0:300])
+        else empty end)
+    elif .type == "user" then
+      (.message.content[]? |
+        if .type == "tool_result" then
+          "\n[2m→ " +
+            ((.content | if type == "array" then .[0].text? // (. | tostring) else . | tostring end) | .[0:600]) +
+            "[0m"
+        else empty end)
+    elif .type == "result" then
+      "\n[2m[end of agent run | cost: $" + ((.total_cost_usd // 0) | tostring) + "][0m"
+    else empty end
+  ' || true
 
 echo ""
 echo "----------------------------------------------------------------------"
