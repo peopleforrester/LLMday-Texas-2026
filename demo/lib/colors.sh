@@ -29,9 +29,13 @@ RED=$'\033[1;91m'
 RED_BOLD=$'\033[1;91m'
 WHITE=$'\033[1;97m'
 
-# High-contrast status badges. Background colors + bold black/white
-# text. These always read clearly even on washed-out projectors where
-# the bold-bright foreground colors look muted.
-BADGE_ALLOWED=$'\033[1;30;102m'   # bold black on bright green bg
-BADGE_DENIED=$'\033[1;97;101m'    # bold white on bright red bg
-BADGE_ERROR=$'\033[1;30;103m'     # bold black on bright yellow bg
+# High-contrast status badges. Background colors + foreground chosen
+# for max readability on a black-background terminal whose projector
+# may be washed out.
+#
+# Note: avoid '1;30' (bold black) — many terminals render bold black
+# as dark gray, which loses contrast against a green bg. Use bright
+# white instead.
+BADGE_ALLOWED=$'\033[1;97;42m'    # bold bright white on green bg
+BADGE_DENIED=$'\033[1;97;41m'     # bold bright white on red bg
+BADGE_ERROR=$'\033[1;30;43m'      # bold black on yellow bg (yellow is light enough that black still reads)
