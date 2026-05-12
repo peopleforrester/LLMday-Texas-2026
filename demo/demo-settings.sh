@@ -28,6 +28,40 @@ auto_pause() {
 # ============================================================
 # Helpers
 # ============================================================
+# Scroll speed: seconds per line as the file content prints.
+# 0.15s × ~60 lines ≈ 9 seconds of slow scroll per file.
+# Tune with SETTINGS_LINE_DELAY=0.30 (slower) or 0.05 (faster).
+LINE_DELAY="${SETTINGS_LINE_DELAY:-0.15}"
+
+# Highlight deny keywords red and key tool names blue, in-place per line.
+_highlight_line() {
+  local line="$1"
+  # Deny / forbid / failure terms → bold bright red
+  line=$(printf '%s' "$line" | sed -E "s/(DENY|denied|Forbidden|HOOK_DENY|deny:|Sigkill|FailedCreate|exit 1|exit 2)/$(printf '\033[1;91m')\1$(printf '\033[0m')/gI")
+  # Tool / command names as standalone words → bold bright blue
+  line=$(printf '%s' "$line" | sed -E "s/\\b(kubectl|git|grep|sed|jq|chmod|mkdir|bash)\\b/$(printf '\033[1;94m')\1$(printf '\033[0m')/g")
+  # YAML keys (lines like "  name:" or "  expression:") → bold cyan on the key only
+  line=$(printf '%s' "$line" | sed -E "s/^([[:space:]]*)([a-zA-Z][a-zA-Z0-9_-]*:)/\1$(printf '\033[1;96m')\2$(printf '\033[0m')/")
+  printf '%s\n' "$line"
+}
+
+# Print a file line by line with highlighting + per-line delay.
+slow_print_file() {
+  local path="$1"
+  if [[ ! -f "$path" ]]; then
+    echo -e "${RED}ERROR: $path not found${RESET}" >&2
+    return 1
+  fi
+  local line_no=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line_no=$((line_no + 1))
+    # Print line number (gray) + highlighted content
+    printf "${DIM}%3d${RESET}  " "$line_no"
+    _highlight_line "$line"
+    sleep "$LINE_DELAY"
+  done < "$path"
+}
+
 show_file() {
   local beat="$1"
   local title="$2"
@@ -43,11 +77,7 @@ show_file() {
   echo -e "${YELLOW}What it enforces:${RESET} ${oneliner}"
   echo ""
   echo -e "${DIM}─── file content ─────────────────────────────────────────────────${RESET}"
-  if [[ -f "$path" ]]; then
-    cat "$path"
-  else
-    echo -e "${RED}ERROR: $path not found${RESET}" >&2
-  fi
+  slow_print_file "$path"
   echo -e "${DIM}─── end of file ──────────────────────────────────────────────────${RESET}"
   echo ""
 }
