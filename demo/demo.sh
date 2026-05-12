@@ -50,26 +50,29 @@ fi
 # ============================================================
 print_banner() {
   clear
-  # Box width: 65 chars between borders. Truncate kubeconfig path to fit.
-  local box_inner=63
-  local kube_label="Kubeconfig: "
-  local kube_path="${DEMO_LOCAL/#$HOME/~}/kubeconfig"
-  local content="  ${kube_label}${kube_path}"
-  # Truncate if too long
-  if (( ${#content} > box_inner )); then
-    content="${content:0:$((box_inner - 3))}..."
-  fi
-  # Pad to fill
-  local pad_count=$(( box_inner - ${#content} ))
-  (( pad_count < 0 )) && pad_count=0
-  local pad
-  pad=$(printf '%*s' "$pad_count" '')
-
+  # Box inner width must match the dash count in the top/bottom border.
+  # Currently 65 dashes.
+  local box_inner=65
   local region="${AWS_REGION:-us-east-2}"
+  local kube_path="${DEMO_LOCAL/#$HOME/~}/kubeconfig"
+
+  local row1="  Claude Code 1.2.3"
+  local row2="  Connected: EKS Auto Mode (${region})"
+  local row3="  Kubeconfig: ${kube_path}"
+
+  # Pad or truncate a row to exactly box_inner chars.
+  _format_row() {
+    local s="$1"
+    if (( ${#s} > box_inner )); then
+      s="${s:0:$((box_inner - 3))}..."
+    fi
+    printf '%s%*s' "$s" "$((box_inner - ${#s}))" ''
+  }
+
   echo -e "${DIM}╭─────────────────────────────────────────────────────────────────╮${RESET}"
-  echo -e "${DIM}│  Claude Code 1.2.3                                              │${RESET}"
-  echo -e "${DIM}│  Connected: EKS Auto Mode ($region)                              │${RESET}"
-  echo -e "${DIM}│${content}${pad}│${RESET}"
+  echo -e "${DIM}│$(_format_row "$row1")│${RESET}"
+  echo -e "${DIM}│$(_format_row "$row2")│${RESET}"
+  echo -e "${DIM}│$(_format_row "$row3")│${RESET}"
   echo -e "${DIM}╰─────────────────────────────────────────────────────────────────╯${RESET}"
   echo ""
 }
