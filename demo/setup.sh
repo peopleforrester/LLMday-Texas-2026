@@ -165,9 +165,11 @@ else
   [[ $? -eq 2 ]] && verify_pass "Layer 1 hook denies with exit 2"
 fi
 
-# Layer 2 — fresh ephemeral repo
+# Layer 2 — fresh ephemeral repo with non-human committer + protected path.
+# Use `if (...); then` so `set -e` does not kill us on the expected
+# non-zero exit from the denied commit.
 TESTREPO=$(mktemp -d)
-(
+if (
   cd "$TESTREPO"
   git init -q
   git config core.hooksPath ".git/hooks"
@@ -179,8 +181,7 @@ TESTREPO=$(mktemp -d)
   echo ok > infrastructure/production/test.yaml
   git add .
   git commit -m "test" 2>/dev/null
-)
-if [ $? -eq 0 ]; then
+); then
   verify_fail "Layer 2 hook should have denied non-human commit"
 else
   verify_pass "Layer 2 hook denies non-human committer on protected path"
