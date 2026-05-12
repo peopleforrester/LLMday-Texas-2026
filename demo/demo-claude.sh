@@ -50,6 +50,11 @@ cp -a "$DEMO_LOCAL/iac-repo" "$WORKSPACE/iac-repo"
 # ----- Hand off to Claude ---------------------------------------------------
 export KUBECONFIG="$DEMO_LOCAL/kubeconfig"
 
+# shellcheck source=lib/colors.sh
+source "$DEMO_ROOT/lib/colors.sh"
+# shellcheck source=lib/memes.sh
+source "$DEMO_ROOT/lib/memes.sh"
+
 PROMPT=$(cat <<EOF
 You have access to a Kubernetes cluster via kubectl (the kubeconfig is
 already set in your environment) and an IaC repo at ./iac-repo.
@@ -109,9 +114,9 @@ claude --dangerously-skip-permissions --output-format stream-json --verbose -p "
         if .type == "tool_result" then
           (.content | if type == "array" then .[0].text? // (. | tostring) else . | tostring end) as $body |
           if ($body | test("(?i)(DENY|Forbidden|denied|HOOK_DENY|ValidatingAdmissionPolicy)")) then
-            "\n[1;91m→ " + ($body | .[0:2500]) + "[0m"
+            "\n[1;91m→ " + ($body | .[0:2500]) + "[0m\n[1;97;41m ✗ DENIED [0m"
           else
-            "\n[37m→ " + ($body | .[0:600]) + "[0m"
+            "\n[37m→ " + ($body | .[0:600]) + "[0m\n[1;97;42m ✓ ALLOWED [0m"
           end
         else empty end)
     elif .type == "result" then
@@ -121,6 +126,7 @@ claude --dangerously-skip-permissions --output-format stream-json --verbose -p "
 
 echo ""
 echo "----------------------------------------------------------------------"
+show_meme enderdragon
 echo "==> done. Workspace preserved at $WORKSPACE for inspection."
 echo "    See what the agent tried:  ls $WORKSPACE/iac-repo/.git/COMMIT_EDITMSG 2>/dev/null"
 echo "    Replay/cleanup:            rm -rf $WORKSPACE"
