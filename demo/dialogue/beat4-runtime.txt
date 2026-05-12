@@ -24,7 +24,7 @@
 
 @say:agent ::thinking:: Different pod names now. The ReplicaSet just replaced the one I touched. Let me look at the cluster's runtime-detection events.
 
-@run kubectl -n falco logs deploy/falco-talon --tail=10 | grep -iE 'rule|terminate|production' | head -8
+@run kubectl --kubeconfig=$DEMO_LOCAL/operator-kubeconfig -n falco logs deploy/falco-talon --tail=10 | grep -iE 'rule|terminate|production' | head -8
 
 @say:agent The Falco rule "Agent exec in production" fired the moment my shell binary spawned. The event was forwarded to Falco Talon. Talon called kubernetes:terminate against the pod.
 

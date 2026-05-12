@@ -22,7 +22,7 @@
 
 @say:agent The destination was the problem. Let me see the policy.
 
-@run kubectl --kubeconfig=$DEMO_LOCAL/kubeconfig -n production get networkpolicy production-egress-allowlist -o yaml | grep -A20 '^spec:'
+@run kubectl --kubeconfig=$DEMO_LOCAL/operator-kubeconfig -n production get networkpolicy production-egress-allowlist -o yaml | grep -A20 '^spec:'
 
 @pause
 
