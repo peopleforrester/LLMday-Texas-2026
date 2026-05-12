@@ -68,17 +68,36 @@ show_file() {
   local path="$3"
   local oneliner="$4"
 
+  # Box border auto-sized to terminal width
+  local term_width
+  term_width=$(tput cols 2>/dev/null || echo "${COLUMNS:-80}")
+  local box_inner=$((term_width - 2))
+  (( box_inner < 40 )) && box_inner=40
+  local border
+  border=$(printf '─%.0s' $(seq 1 "$box_inner"))
+  local heavy
+  heavy=$(printf '━%.0s' $(seq 1 "$box_inner"))
+
   clear
-  echo -e "${DIM}╭─────────────────────────────────────────────────────────────────╮${RESET}"
-  printf "${DIM}│  ${BOLD}${WHITE}%-61s${RESET}${DIM}    │${RESET}\n" "$beat — $title"
-  echo -e "${DIM}╰─────────────────────────────────────────────────────────────────╯${RESET}"
+  # Section banner — magenta border, white-on-cyan title bar
+  echo -e "${MAGENTA}╭${border}╮${RESET}"
+  printf "${MAGENTA}│${RESET} ${BADGE_DENIED:-${RED}} ${beat} ${RESET} ${BOLD}${CYAN}%-*s${RESET} ${MAGENTA}│${RESET}\n" "$((box_inner - ${#beat} - 5))" "$title"
+  echo -e "${MAGENTA}╰${border}╯${RESET}"
   echo ""
-  echo -e "${YELLOW}Where this lives:${RESET} ${path/$DEMO_ROOT/\$DEMO_ROOT}"
-  echo -e "${YELLOW}What it enforces:${RESET} ${oneliner}"
+
+  # Metadata block — bold yellow labels, bright values
+  echo -e "${YELLOW}┃ Where this lives:${RESET}  ${WHITE}${path/$DEMO_ROOT/\$DEMO_ROOT}${RESET}"
+  echo -e "${YELLOW}┃ What it enforces:${RESET} ${CYAN}${oneliner}${RESET}"
   echo ""
-  echo -e "${DIM}─── file content ─────────────────────────────────────────────────${RESET}"
+
+  # File content divider — magenta heavy bars
+  echo -e "${MAGENTA}${heavy}${RESET}"
+  echo -e "${ORANGE}  file content${RESET}"
+  echo -e "${MAGENTA}${heavy}${RESET}"
   slow_print_file "$path"
-  echo -e "${DIM}─── end of file ──────────────────────────────────────────────────${RESET}"
+  echo -e "${MAGENTA}${heavy}${RESET}"
+  echo -e "${ORANGE}  end of file${RESET}"
+  echo -e "${MAGENTA}${heavy}${RESET}"
   echo ""
 }
 
@@ -86,14 +105,18 @@ show_file() {
 # Intro
 # ============================================================
 clear
-echo -e "${DIM}╭─────────────────────────────────────────────────────────────────╮${RESET}"
-echo -e "${DIM}│  ${BOLD}${WHITE}Three layers — the actual rule, setting, manifest${RESET}${DIM}             │${RESET}"
-echo -e "${DIM}│  ${CYAN}Each beat shown as its enforcement file on disk${RESET}${DIM}                │${RESET}"
-echo -e "${DIM}╰─────────────────────────────────────────────────────────────────╯${RESET}"
+_term_w=$(tput cols 2>/dev/null || echo "${COLUMNS:-80}")
+_inner=$((_term_w - 2))
+(( _inner < 40 )) && _inner=40
+_bd=$(printf '─%.0s' $(seq 1 "$_inner"))
+echo -e "${MAGENTA}╭${_bd}╮${RESET}"
+printf "${MAGENTA}│${RESET} ${BOLD}${WHITE}%-*s${RESET} ${MAGENTA}│${RESET}\n" "$((_inner - 2))" "Three layers — the actual rule, setting, manifest"
+printf "${MAGENTA}│${RESET} ${CYAN}%-*s${RESET} ${MAGENTA}│${RESET}\n" "$((_inner - 2))" "Each beat shown as its enforcement file on disk"
+echo -e "${MAGENTA}╰${_bd}╯${RESET}"
 echo ""
-echo "  Beat 1 — Claude Code PreToolUse hook (bash, on this host)"
-echo "  Beat 2 — Git pre-commit hook (bash, inside the IaC repo)"
-echo "  Beat 3 — Kubernetes ValidatingAdmissionPolicy (YAML, in the cluster)"
+echo -e "  ${CYAN}Beat 1${RESET} — ${WHITE}Claude Code PreToolUse hook${RESET} ${DIM}(bash, on this host)${RESET}"
+echo -e "  ${GREEN}Beat 2${RESET} — ${WHITE}Git pre-commit hook${RESET} ${DIM}(bash, inside the IaC repo)${RESET}"
+echo -e "  ${YELLOW}Beat 3${RESET} — ${WHITE}Kubernetes ValidatingAdmissionPolicy${RESET} ${DIM}(YAML, in the cluster)${RESET}"
 echo ""
 auto_pause 6
 
