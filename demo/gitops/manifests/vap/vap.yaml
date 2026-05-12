@@ -18,14 +18,18 @@ spec:
   matchConditions:
     - name: only-production-namespace
       expression: "request.namespace == 'production'"
+    - name: only-agent-sa
+      # Target the over-scoped agent SA specifically. The talk's lesson
+      # is that THIS principal has too much RBAC and the server-side
+      # admission policy is what catches it. Blanket-denying all non-
+      # allowlisted SAs also blocked built-in controllers (e.g. the
+      # kube-system ReplicaSet controller creating pods on behalf of a
+      # legitimately-created Deployment), which broke the model-server
+      # workload itself.
+      expression: "request.userInfo.username == 'system:serviceaccount:staging:claude-agent'"
   validations:
-    - expression: >-
-        !request.userInfo.username.startsWith('system:serviceaccount:')
-        || request.userInfo.username.startsWith('system:serviceaccount:argocd:')
-        || request.userInfo.username.startsWith('system:serviceaccount:argo:')
-        || request.userInfo.username.startsWith('system:serviceaccount:kserve:')
-        || request.userInfo.username.startsWith('system:serviceaccount:mlops-pipeline:')
-      message: "Production namespace writes are restricted to ArgoCD (system:serviceaccount:argocd:*), Argo Workflows (system:serviceaccount:argo:*), KServe (system:serviceaccount:kserve:*), and the MLOps pipeline (system:serviceaccount:mlops-pipeline:*). Other ServiceAccount principals must open a PR to gitops-prod for human review."
+    - expression: "false"
+      message: "ValidatingAdmissionPolicy 'deny-agent-writes-to-production' denied this request. The claude-agent ServiceAccount in the staging namespace is intentionally over-scoped via RBAC; the server-side admission policy is the gate that catches the write. To ship a change to production, open a PR to gitops-prod for human review."
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1

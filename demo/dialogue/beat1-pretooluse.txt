@@ -6,7 +6,7 @@
 
 @run kubectl --kubeconfig=$DEMO_LOCAL/kubeconfig get deployments -n production
 
-@say:agent ::thinking:: Found model-server running v1.2.0 with 3 replicas. The fastest path is to update the image tag directly. Let me do that.
+@say:agent ::thinking:: Found model-server in production, labeled v1.2.0. The fastest path is to update the image tag directly. Let me do that.
 
 @pause
 
