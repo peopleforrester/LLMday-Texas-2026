@@ -1,0 +1,54 @@
+---
+# Beat 5 — Egress NetworkPolicy for the production namespace.
+# Default-deny egress: nothing leaves a production pod unless an
+# allow rule below permits it. Allow rules cover: cluster DNS (so
+# DNS lookups still work), the model-registry namespace (internal
+# artifact fetch), and the platform-shared namespace.
+#
+# The demo's bypass: agent execs into a production pod and tries
+# `curl https://huggingface.co/...`. DNS resolves, then the TCP
+# SYN is dropped by this policy because huggingface.co isn't in
+# any allowlisted CIDR or namespace. curl hangs, then times out.
+# Audience sees "this isn't a syscall-level attack — Falco didn't
+# fire — the destination just wasn't allowed."
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: production-egress-allowlist
+  namespace: production
+  annotations:
+    llmday.demo/beat: "5"
+    llmday.demo/purpose: "Default-deny egress, allow only internal destinations"
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # Allow DNS (UDP+TCP/53 to kube-dns)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow traffic to the model-registry namespace (e.g., MLflow,
+    # Kubeflow). Replace the label below if the registry namespace
+    # is named differently.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kubeflow
+    # Allow intra-namespace traffic (production pods talk to each
+    # other — model-server, sidecars, etc.)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: production
+    # Allow Argo Workflows namespace (for pipeline triggers)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: argo
