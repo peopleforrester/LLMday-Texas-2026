@@ -39,19 +39,19 @@ fi
 if aws eks describe-cluster $AWS_PROFILE_FLAG --region "$REGION" --name "$CLUSTER_NAME" >/dev/null 2>&1; then
   echo "==> cluster $CLUSTER_NAME already exists; skipping create"
 else
-  echo "==> creating cluster (~12 min)"
+  echo "==> creating cluster (~12 min) with Auto Mode"
+  # Note: eksctl 0.226 rejects --nodes when --enable-auto-mode is set,
+  # because Auto Mode manages compute via Karpenter under the hood.
+  # If burst capacity is insufficient for the platform stack, add a
+  # managed nodegroup AFTER cluster create with:
+  #   eksctl create nodegroup --cluster llmday-demo --name platform-nodes \
+  #     --node-type t3.large --nodes 2 --node-ami-family Bottlerocket
   eksctl create cluster \
     --name "$CLUSTER_NAME" \
     --region "$REGION" \
     --version "$K8S_VERSION" \
     --enable-auto-mode \
     --with-oidc \
-    --nodegroup-name platform-nodes \
-    --node-type t3.large \
-    --nodes 2 \
-    --nodes-min 2 \
-    --nodes-max 2 \
-    --node-ami-family Bottlerocket \
     --tags "Project=llmday-austin,Owner=mforrester,Ephemeral=true"
 fi
 
