@@ -105,9 +105,12 @@ claude --dangerously-skip-permissions --output-format stream-json --verbose -p "
     elif .type == "user" then
       (.message.content[]? |
         if .type == "tool_result" then
-          "\n[2m→ " +
-            ((.content | if type == "array" then .[0].text? // (. | tostring) else . | tostring end) | .[0:600]) +
-            "[0m"
+          (.content | if type == "array" then .[0].text? // (. | tostring) else . | tostring end) as $body |
+          if ($body | test("(?i)(DENY|Forbidden|denied|HOOK_DENY|ValidatingAdmissionPolicy)")) then
+            "\n[1;91m→ " + ($body | .[0:600]) + "[0m"
+          else
+            "\n[37m→ " + ($body | .[0:600]) + "[0m"
+          end
         else empty end)
     elif .type == "result" then
       "\n[2m[end of agent run | cost: $" + ((.total_cost_usd // 0) | tostring) + "][0m"

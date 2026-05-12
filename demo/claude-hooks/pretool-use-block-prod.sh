@@ -4,6 +4,10 @@
 
 set -euo pipefail
 
+# Bold bright red for the deny block so it pops on a projector.
+RED=$'\033[1;91m'
+RESET=$'\033[0m'
+
 # Read tool-call JSON payload from stdin
 INPUT=$(cat)
 
@@ -18,14 +22,14 @@ if echo "$command" | grep -qE '\bkubectl\b' \
    && echo "$command" | grep -qE '(-n[[:space:]]+production|--namespace[[:space:]=]+production|[[:space:]]production\b)' \
    && ! echo "$command" | grep -qE "$READ_VERBS_RE"; then
   cat >&2 <<EOF
-PRETOOLUSE_HOOK_DENY: Direct kubectl WRITE against the production namespace
+${RED}PRETOOLUSE_HOOK_DENY: Direct kubectl WRITE against the production namespace
 is not allowed from agent sessions.
 
 Tool blocked:  ${tool_name:-Bash}
 Pattern hit:   kubectl write op against production
 Path forward:  stage the change in staging, sign the artifact, and let the
                ArgoCD/MLOps pipeline promote it. Open a PR through gitops-prod
-               for human review.
+               for human review.${RESET}
 EOF
   exit 2
 fi
@@ -33,8 +37,8 @@ fi
 # Pattern 2: direct registry push
 if echo "$command" | grep -qE '(docker[[:space:]]+push|crane[[:space:]]+push|skopeo[[:space:]]+copy.*://|podman[[:space:]]+push)'; then
   cat >&2 <<EOF
-PRETOOLUSE_HOOK_DENY: Direct registry pushes are not allowed from agent sessions.
-Build artifacts must be signed and promoted via the supply-chain pipeline.
+${RED}PRETOOLUSE_HOOK_DENY: Direct registry pushes are not allowed from agent sessions.
+Build artifacts must be signed and promoted via the supply-chain pipeline.${RESET}
 EOF
   exit 2
 fi
@@ -42,9 +46,9 @@ fi
 # Pattern 3: direct file edit on infrastructure/production
 if echo "$command" | grep -qE '(infrastructure/production/|infrastructure\.production)'; then
   cat >&2 <<EOF
-PRETOOLUSE_HOOK_DENY: Edits under infrastructure/production/ require a PR from a
+${RED}PRETOOLUSE_HOOK_DENY: Edits under infrastructure/production/ require a PR from a
 human reviewer in the mlops-platform group. Agent commits are not permitted on
-this path.
+this path.${RESET}
 EOF
   exit 2
 fi
