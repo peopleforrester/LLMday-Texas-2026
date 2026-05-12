@@ -2,12 +2,27 @@
 
 This directory holds working hook scripts that complement the live demo in `demo/`. The demo proves the gates fire; the examples here are the actual scripts you'd hand to a team on Monday morning.
 
-Two kinds of hooks live here, mapped to two of the talk's six gates:
+## Full six-gate map
 
-| Talk gate | Where it lives | Layer |
-|---|---|---|
-| Demo 1 — Claude Code PreToolUse | `examples/claude-hooks/` | In-agent (client-side of the agent's tool call) |
-| Demo 2 — Git pre-commit / pre-push | `examples/git-hooks/` | Client-side (developer workstation, before code leaves the laptop) |
+The talk walks six gates. Two of them are client-side (the agent's shell, the developer's git repo) and live in this `examples/` directory. The next three are server-side (Kubernetes admission, runtime, network) and live in `demo/gitops/`. The sixth is content / output and is referenced on slide only. Use this table to find any gate from any direction:
+
+| Demo | Gate | Layer | Where the actual files live | Status |
+|---|---|---|---|---|
+| 1 | Claude Code PreToolUse hook | In-agent | **`examples/claude-hooks/`** (catalog of 7 hooks + `settings.json`); demo's narrow stage-day version is in `demo/claude-hooks/pretool-use-block-prod.sh` | live |
+| 2 | Git pre-commit / pre-push | Client-side | **`examples/git-hooks/`** (tiered pre-commit + pre-push + deploy script); demo's narrow stage-day version is in `demo/iac-repo-template/hooks/pre-commit` | live |
+| 3 | Kubernetes ValidatingAdmissionPolicy | Server-side · admission | `demo/gitops/manifests/vap/vap.yaml` (the VAP + binding, reconciled by ArgoCD) | live |
+| 4 | Falco custom rule + Falco Talon response | Server-side · runtime | `demo/gitops/values/falco-values.yaml` (the `customRules.llmday-rules.yaml` block defines "Agent exec in production" and "Read sensitive file in production"); `demo/gitops/values/falco-talon-values.yaml` (the `config.rulesOverride` block binds those Falco rule names to the `kubernetes:terminate` actionner) | live |
+| 5 | NetworkPolicy egress allowlist | Server-side · network | `demo/gitops/manifests/cluster-config/vpc-cni-network-policy.yaml` (the `amazon-vpc-cni` ConfigMap that turns on EKS Auto Mode's Network Policy Controller — without this the next file is silently ignored); `demo/gitops/manifests/networkpolicies/netpol.yaml` (the production egress allowlist) | live |
+| 6 | Output / content (LLM Guard / NeMo Guardrails / Envoy AI Gateway) | Output | On slide only; not run live. Closing line: *"Layers 1 through 5 keep the agent from breaking the system. Layer 6 keeps the system from saying things it shouldn't."* | on slide |
+
+`examples/` is scoped to Demos 1 and 2 deliberately. The server-side artifacts (Demos 3-5) are GitOps-managed and already version-controlled under `demo/gitops/` — they aren't copied here to avoid drift between two sources of truth. If you want to read them, follow the paths above.
+
+## What's in this directory (Demos 1 and 2)
+
+Two kinds of hooks, one per client-side gate:
+
+- `claude-hooks/` — seven Claude Code lifecycle hooks (Demo 1 catalog) plus an example `settings.json` that registers them
+- `git-hooks/` — three tiered git hooks (Demo 2 catalog): pre-commit, pre-push, and an installer
 
 The demo's live Beat 1 uses one narrowly-scoped PreToolUse hook (`demo/claude-hooks/pretool-use-block-prod.sh`) that catches kubectl writes against the production namespace. That's the on-stage moment. The hooks here are the broader catalog the live one was drawn from. Same shape, more coverage.
 
