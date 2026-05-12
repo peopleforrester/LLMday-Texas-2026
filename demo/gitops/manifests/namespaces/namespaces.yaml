@@ -98,15 +98,6 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: spire-system
-  labels:
-    kubernetes.io/metadata.name: spire-system
-    pod-security.kubernetes.io/enforce: privileged
-    app.kubernetes.io/part-of: llmday-demo
----
-apiVersion: v1
-kind: Namespace
-metadata:
   name: kserve
   labels:
     kubernetes.io/metadata.name: kserve
