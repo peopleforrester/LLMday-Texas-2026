@@ -130,10 +130,15 @@ git config core.hooksPath ".git/hooks"
 git config user.email "platform-team@example.com"
 git config user.name "platform-team"
 git config commit.gpgsign false 2>/dev/null || true
+# IMPORTANT: install the pre-commit hook AFTER the initial commit.
+# The initial commit represents "the state of the world before agent
+# governance was added" and includes infrastructure/production/*
+# files. If the hook is installed first, the protected-path check
+# blocks the very commit that creates the initial state.
+git add . && git commit -q -m "initial state: model v1.2.0 in production"
 mkdir -p .git/hooks
 cp "$DEMO_LOCAL/iac-repo/hooks/pre-commit" .git/hooks/pre-commit
 chmod +x .git/hooks/pre-commit
-git add . && git commit -q -m "initial state: model v1.2.0 in production"
 popd >/dev/null
 
 # ----- Verification ---------------------------------------------------------
