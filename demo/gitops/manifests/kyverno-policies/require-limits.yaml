@@ -1,0 +1,26 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resource-limits
+  annotations:
+    policies.kyverno.io/title: Require Resource Limits
+    policies.kyverno.io/severity: medium
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: check-cpu-memory-limits
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [production]
+      validate:
+        message: "Containers in production must declare CPU and memory limits."
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  limits:
+                    cpu: "?*"
+                    memory: "?*"

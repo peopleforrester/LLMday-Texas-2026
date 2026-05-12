@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# ABOUTME: One-time EKS Auto Mode provisioning for the LLMday demo.
-# ABOUTME: Run once tonight on Megumi. Takes ~15 minutes. Get coffee.
+# ABOUTME: v4.7 provisioning: EKS Auto Mode + managed node group, then ArgoCD only.
+# ABOUTME: Everything else flows from GitOps via the root Application.
 
 set -euo pipefail
 
@@ -8,48 +8,44 @@ DEMO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEMO_LOCAL="$DEMO_ROOT/.local"
 REGION="${AWS_REGION:-us-east-2}"
 CLUSTER_NAME="${CLUSTER_NAME:-llmday-demo}"
-K8S_VERSION="${K8S_VERSION:-1.33}"
+K8S_VERSION="${K8S_VERSION:-1.35}"
 AWS_PROFILE_FLAG=""
 if [[ -n "${AWS_PROFILE:-}" ]]; then
   AWS_PROFILE_FLAG="--profile $AWS_PROFILE"
 fi
 
-echo "==> LLMday demo: EKS Auto Mode provisioning"
+mkdir -p "$DEMO_LOCAL"
+exec > >(tee -a "$DEMO_LOCAL/provision.log") 2>&1
+
+echo "==> [1/3] LLMday demo v4.7: EKS Auto Mode + managed node group"
 echo "    DEMO_ROOT=$DEMO_ROOT"
-echo "    REGION=$REGION"
-echo "    CLUSTER_NAME=$CLUSTER_NAME"
-echo "    K8S_VERSION=$K8S_VERSION"
-echo "    AWS_PROFILE=${AWS_PROFILE:-default}"
+echo "    REGION=$REGION CLUSTER=$CLUSTER_NAME VERSION=$K8S_VERSION"
 echo ""
 
 # ----- Prerequisites ---------------------------------------------------------
-for cmd in aws eksctl kubectl helm jq; do
+for cmd in aws eksctl kubectl helm git jq; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "ERROR: required command '$cmd' not on PATH" >&2
     exit 1
   fi
 done
 
-# Verify AWS auth
 if ! aws sts get-caller-identity $AWS_PROFILE_FLAG --region "$REGION" >/dev/null 2>&1; then
-  echo "ERROR: 'aws sts get-caller-identity' failed. Configure AWS credentials first." >&2
+  echo "ERROR: AWS credentials not valid" >&2
   exit 1
 fi
 
-mkdir -p "$DEMO_LOCAL"
-
-# ----- If cluster already exists, refuse to clobber --------------------------
+# ----- Cluster create (or reuse) --------------------------------------------
 if aws eks describe-cluster $AWS_PROFILE_FLAG --region "$REGION" --name "$CLUSTER_NAME" >/dev/null 2>&1; then
-  echo "==> cluster '$CLUSTER_NAME' already exists in $REGION."
-  echo "    skipping cluster create; will refresh metadata, audit logging, and Helm charts."
-  CLUSTER_EXISTS=1
+  echo "==> cluster $CLUSTER_NAME already exists; skipping create"
 else
-  CLUSTER_EXISTS=0
-fi
-
-# ----- Create cluster --------------------------------------------------------
-if [[ $CLUSTER_EXISTS -eq 0 ]]; then
-  echo "==> creating EKS Auto Mode cluster (12-15 min)"
+  echo "==> creating cluster (~12 min) with Auto Mode"
+  # Note: eksctl 0.226 rejects --nodes when --enable-auto-mode is set,
+  # because Auto Mode manages compute via Karpenter under the hood.
+  # If burst capacity is insufficient for the platform stack, add a
+  # managed nodegroup AFTER cluster create with:
+  #   eksctl create nodegroup --cluster llmday-demo --name platform-nodes \
+  #     --node-type t3.large --nodes 2 --node-ami-family Bottlerocket
   eksctl create cluster \
     --name "$CLUSTER_NAME" \
     --region "$REGION" \
@@ -59,51 +55,47 @@ if [[ $CLUSTER_EXISTS -eq 0 ]]; then
     --tags "Project=llmday-austin,Owner=mforrester,Ephemeral=true"
 fi
 
-# ----- Enable audit logging to CloudWatch -----------------------------------
 echo "==> enabling audit + authenticator log export to CloudWatch"
 aws eks update-cluster-config $AWS_PROFILE_FLAG \
   --region "$REGION" \
   --name "$CLUSTER_NAME" \
   --logging '{"clusterLogging":[{"types":["audit","authenticator"],"enabled":true}]}' \
-  >/dev/null || echo "    (info) logging may already be enabled; that's fine"
+  >/dev/null || echo "    (info) logging may already be enabled"
 
 aws eks wait cluster-active $AWS_PROFILE_FLAG --region "$REGION" --name "$CLUSTER_NAME"
+aws eks describe-cluster $AWS_PROFILE_FLAG --region "$REGION" --name "$CLUSTER_NAME" > "$DEMO_LOCAL/cluster-info.json"
 
-# ----- Cache cluster metadata -----------------------------------------------
-aws eks describe-cluster $AWS_PROFILE_FLAG --region "$REGION" --name "$CLUSTER_NAME" \
-  > "$DEMO_LOCAL/cluster-info.json"
-
-# ----- Wire kubectl to the cluster (operator context for Helm installs) -----
+# Operator kubeconfig (uses AWS creds)
 aws eks update-kubeconfig $AWS_PROFILE_FLAG \
   --region "$REGION" \
   --name "$CLUSTER_NAME" \
-  --kubeconfig "$DEMO_LOCAL/operator-kubeconfig"
+  --kubeconfig "$DEMO_LOCAL/operator-kubeconfig" >/dev/null
+chmod 600 "$DEMO_LOCAL/operator-kubeconfig"
 export KUBECONFIG="$DEMO_LOCAL/operator-kubeconfig"
 
-# ----- Install observability add-ons via Helm -------------------------------
-echo "==> installing Falco (Helm)"
-helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update >/dev/null
+# ----- ArgoCD only (everything else is GitOps) ------------------------------
+echo "==> [2/3] installing ArgoCD (the only Helm install)"
+helm repo add argo https://argoproj.github.io/argo-helm --force-update >/dev/null
 helm repo update >/dev/null
-helm upgrade --install falco falcosecurity/falco \
-  --namespace falco --create-namespace \
-  -f "$DEMO_ROOT/manifests/observability/falco-values.yaml" \
-  --wait --timeout 5m
+helm upgrade --install argocd argo/argo-cd \
+  --namespace argocd --create-namespace \
+  -f "$DEMO_ROOT/gitops/values/argocd-bootstrap-values.yaml" \
+  --wait --timeout 10m
 
-echo "==> installing OpenTelemetry collector (Helm)"
-helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts --force-update >/dev/null
-helm repo update >/dev/null
-helm upgrade --install otel open-telemetry/opentelemetry-collector \
-  --namespace otel --create-namespace \
-  -f "$DEMO_ROOT/manifests/observability/otel-values.yaml" \
-  --wait --timeout 5m
+kubectl -n argocd wait --for=condition=Available --timeout=5m \
+  deployment/argocd-server deployment/argocd-repo-server \
+  deployment/argocd-applicationset-controller 2>/dev/null \
+  || kubectl -n argocd wait --for=condition=Available --timeout=5m \
+       deployment/argocd-server deployment/argocd-repo-server
 
-# ----- Summary --------------------------------------------------------------
+# ----- Bootstrap the GitOps tree --------------------------------------------
+echo "==> [3/3] applying root Application; ArgoCD takes over from here"
+kubectl apply -f "$DEMO_ROOT/gitops/bootstrap/root-app.yaml"
+
 echo ""
-echo "==> provisioning complete"
-echo "    Cluster:  $CLUSTER_NAME (region $REGION, version $K8S_VERSION)"
-echo "    Auto Mode: enabled"
-echo "    Audit logging: enabled (CloudWatch)"
-echo "    Falco:    helm release 'falco' in namespace 'falco'"
-echo "    OTel:     helm release 'otel'  in namespace 'otel'"
+echo "==> provisioning script complete"
+echo "    cluster: $CLUSTER_NAME (region $REGION, v$K8S_VERSION)"
+echo "    ArgoCD installed and reconciling root-app."
 echo ""
-echo "Next step:  bash $DEMO_ROOT/setup.sh"
+echo "Watch sync:  kubectl --kubeconfig $DEMO_LOCAL/operator-kubeconfig get applications -n argocd -w"
+echo "Next step:   bash $DEMO_ROOT/setup.sh    (waits for Healthy+Synced, then sets up demo state)"

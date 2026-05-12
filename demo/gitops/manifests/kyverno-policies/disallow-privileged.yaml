@@ -1,0 +1,26 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privileged
+  annotations:
+    policies.kyverno.io/title: Disallow Privileged Containers
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: check-privileged
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [production, staging]
+      validate:
+        message: "Privileged containers are not allowed in user namespaces."
+        pattern:
+          spec:
+            =(securityContext):
+              =(privileged): "false"
+            containers:
+              - =(securityContext):
+                  =(privileged): "false"

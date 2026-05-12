@@ -40,3 +40,4 @@ Thumbs.db
 demo/.local/
 demo/*.mp4
 demo/*.mov
+.claude/

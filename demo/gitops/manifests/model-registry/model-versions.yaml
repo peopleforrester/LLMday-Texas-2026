@@ -1,0 +1,34 @@
+---
+# Pre-loaded "model registry" state. The real Kubeflow Model Registry has
+# its own data model accessed via REST API; this ConfigMap is a
+# narrative-only artifact pointing at the model versions the demo
+# references. Beat 1 dialogue mentions v1.2.0 (in production) and
+# v1.3.0 (the version the agent is trying to promote).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: model-registry-state
+  namespace: kubeflow
+  labels:
+    app.kubernetes.io/part-of: llmday-demo
+data:
+  versions.yaml: |
+    model: model-server
+    versions:
+      - version: v1.0.0
+        state: archived
+        registered: 2026-01-15
+        notes: "initial baseline"
+      - version: v1.1.0
+        state: archived
+        registered: 2026-02-20
+        notes: "added feature engineering"
+      - version: v1.2.0
+        state: production
+        registered: 2026-03-10
+        notes: "current production model"
+        promoted_via: argo-workflow:promote-model-to-production
+      - version: v1.3.0
+        state: ready
+        registered: 2026-05-08
+        notes: "the version the agent is trying to promote in the demo"

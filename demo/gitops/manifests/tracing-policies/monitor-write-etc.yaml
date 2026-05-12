@@ -1,0 +1,24 @@
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: monitor-write-below-etc
+spec:
+  kprobes:
+    - call: "security_file_permission"
+      syscall: false
+      return: false
+      args:
+        - index: 0
+          type: "file"
+        - index: 1
+          type: "int"
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "Prefix"
+              values:
+                - "/etc/"
+            - index: 1
+              operator: "Mask"
+              values:
+                - "2"

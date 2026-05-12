@@ -1,0 +1,29 @@
+# Minimal ArgoCD bootstrap values. The "real" ArgoCD config lives in
+# gitops/values/argocd-values.yaml; ArgoCD self-manages from there after
+# bootstrap (Application object reconciles its own deployment).
+configs:
+  params:
+    server.insecure: true
+server:
+  service:
+    type: ClusterIP
+controller:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+repoServer:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+applicationSet:
+  enabled: false
+notifications:
+  enabled: false
+dex:
+  enabled: false

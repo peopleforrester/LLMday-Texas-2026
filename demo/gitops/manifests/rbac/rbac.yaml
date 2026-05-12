@@ -6,7 +6,7 @@ metadata:
   namespace: staging
   annotations:
     llmday.demo/intentionally-overscoped: "true"
-    llmday.demo/purpose: "Demo of how server-side enforcement catches agents whose RBAC is over-permissive within its namespace"
+    llmday.demo/purpose: "Demo of server-side enforcement catching an over-permissive agent"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -23,6 +23,9 @@ rules:
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["serving.kserve.io"]
+    resources: ["inferenceservices"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -38,9 +41,8 @@ roleRef:
   kind: Role
   name: claude-agent-namespace-edit
 ---
-# Read-only access in production so the agent CAN see what's running there.
-# This is what makes Beat 1 work: agent does `kubectl get deployments -n production`
-# successfully, decides to update, then gets denied at write time.
+# Read-only in production so Beat 1's `kubectl get deployments` succeeds
+# before the hook denies the write.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -52,6 +54,9 @@ rules:
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["pods", "services"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["serving.kserve.io"]
+    resources: ["inferenceservices"]
     verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

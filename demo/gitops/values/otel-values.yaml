@@ -1,14 +1,7 @@
-# Helm values for the OpenTelemetry Collector chart
-# (open-telemetry/opentelemetry-collector). Installed by provision-cluster.sh.
-# Deployed as a single replica; exports to debug (stdout) so the audit pane
-# during the demo can show metric increments without a backend dependency.
-
 mode: deployment
 replicaCount: 1
-
 image:
   repository: otel/opentelemetry-collector-contrib
-
 resources:
   requests:
     cpu: 20m
@@ -16,7 +9,6 @@ resources:
   limits:
     cpu: 100m
     memory: 128Mi
-
 config:
   receivers:
     otlp:
@@ -45,7 +37,6 @@ config:
         receivers: [otlp]
         processors: [batch]
         exporters: [debug]
-
 ports:
   otlp:
     enabled: true
