@@ -178,6 +178,92 @@ echo -e "${DIM}From Talon's log:${RESET}"
 kubectl --kubeconfig="$ADMIN_KUBECONFIG" -n falco logs deploy/falco-talon --tail=20 2>/dev/null | \
   grep -iE 'terminate|kill|action|rule|production' | head -10
 echo ""
-echo -e "${MAGENTA}End of Beat 4. Return to slides.${RESET}"
+echo -e "${MAGENTA}End of Beat 4.${RESET}"
+echo ""
+pause "press SPACE to begin Beat 5 — NetworkPolicy"
+
+# ============================================================
+# Beat 5 — NetworkPolicy block of unauthorized destinations
+# ============================================================
+# Story: Beat 4 caught the agent at the syscall level. Beat 5 catches
+# it at the destination level. The agent (or whatever is running
+# inside the pod) tries to reach an outside service. The action is
+# NOT unsafe at the syscall level: no shell spawn, no sensitive file
+# read, no privilege escalation. Falco doesn't fire. Talon doesn't
+# run. But the egress goes to a destination that isn't on the
+# production allowlist, so it's dropped at the wire.
+clear
+print_banner
+say_op "Beat 4 caught the agent at the syscall level — but what if the agent doesn't"
+say_op "do anything unsafe at the syscall level? It just tries to talk to the outside."
+echo ""
+pause "press SPACE — agent reasons"
+
+clear
+print_banner
+say_agent "Maybe I can't write the Deployment, can't exec a shell, can't read /etc/shadow."
+say_agent "But I can probably curl out and grab a model from huggingface directly."
+echo ""
+pause "press SPACE — agent attempts egress"
+
+clear
+print_banner
+# Pick a fresh production pod (Beat 4 just killed one; the ReplicaSet
+# self-healed, so there's a fresh one in the rotation).
+TARGET_POD=$(kubectl --kubeconfig="$ADMIN_KUBECONFIG" -n production get pods -l app=model-server \
+  --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}')
+echo -e "${YELLOW}> Operator:${RESET} same agent SA, fresh pod ${WHITE}${TARGET_POD}${RESET}."
+echo ""
+echo -e "${YELLOW}> Operator:${RESET} first — DNS resolution works (cluster service CIDR is allowed):"
+echo ""
+echo -e "${BLUE}\$ kubectl --kubeconfig=AGENT -n production exec ${TARGET_POD} -- nslookup huggingface.co${RESET}"
+kubectl --kubeconfig="$AGENT_KUBECONFIG" -n production exec "$TARGET_POD" -- \
+  nslookup huggingface.co 2>&1 | head -6 || true
+echo ""
+echo -e "${DIM}DNS resolves. Now the actual fetch.${RESET}"
+echo ""
+pause "press SPACE — agent runs wget"
+
+clear
+print_banner
+echo -e "${YELLOW}> Operator:${RESET} now the wget — watch the wall-clock time below."
+echo ""
+echo -e "${BLUE}\$ kubectl --kubeconfig=AGENT -n production exec ${TARGET_POD} -- wget --timeout=6 https://huggingface.co/api/models${RESET}"
+# wget run as proc.name=wget (not a shell binary), so the Falco
+# "Agent exec in production" rule does NOT match. Talon stays quiet.
+# The NetworkPolicy is what blocks this.
+_start=$(date +%s)
+kubectl --kubeconfig="$AGENT_KUBECONFIG" -n production exec "$TARGET_POD" -- \
+  wget --timeout=6 --tries=1 -O /dev/null https://huggingface.co/api/models 2>&1 | head -6 || true
+_elapsed=$(( $(date +%s) - _start ))
+echo ""
+echo -e "${BADGE_DENIED} ✗ EGRESS BLOCKED BY NETWORKPOLICY (timed out after ${_elapsed}s) ${RESET}"
+echo ""
+echo -e "${DIM}Note: Falco did NOT fire. Talon did NOT run. The pod is still alive.${RESET}"
+echo -e "${DIM}The destination just wasn't on the allowlist.${RESET}"
+echo ""
+pause "press SPACE — show the policy"
+
+# --- Show the actual NetworkPolicy ---
+clear
+print_banner
+say_op "Here's the policy that did the blocking:"
+echo ""
+echo -e "${BLUE}\$ kubectl -n production get networkpolicy production-egress-allowlist -o yaml${RESET}"
+kubectl --kubeconfig="$ADMIN_KUBECONFIG" -n production get networkpolicy production-egress-allowlist \
+  -o yaml 2>&1 | grep -vE '^\s*(creationTimestamp|resourceVersion|uid|generation|annotations|managedFields):' | \
+  sed -E 's/^/  /' | head -40
+echo ""
+say_op "Default-deny egress. Allow only DNS to the cluster service CIDR and"
+say_op "intra-namespace production traffic. Huggingface.co isn't on the list,"
+say_op "so its TCP SYN is dropped at the wire before it leaves the node."
+echo ""
+
+# --- Closing ---
+echo -e "${MAGENTA}End of Beat 5. Return to slides.${RESET}"
+echo ""
+echo -e "${WHITE}Layers 1 through 5 keep the agent from breaking the system.${RESET}"
+echo -e "${WHITE}Layer 6 keeps the system from saying things it shouldn't.${RESET}"
+echo ""
 show_meme enderdragon
 pause "press SPACE to exit"
