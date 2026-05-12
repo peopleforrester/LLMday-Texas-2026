@@ -112,6 +112,14 @@ play_dialogue() {
         type_out "${DIM}${text}${RESET}" 20
         ;;
       "@run "*)
+        # Stream stderr through a colorizer that highlights deny
+        # keywords in bold bright red. Captures kubectl Forbidden, VAP
+        # mentions, hook DENY phrases — anything the audience needs to
+        # see as "this was blocked". Run as a function so we can call
+        # it consistently below.
+        _colorize_denies() {
+          sed -u -E "s/(DENY|Forbidden|denied|VAP|ValidatingAdmissionPolicy|HOOK_DENY)/$(printf '\033[1;91m')\1$(printf '\033[0m')/gI"
+        }
         local cmd="${line#@run }"
         # Detect a heredoc on this @run line and slurp subsequent dialogue
         # lines into the command until we hit the terminator on its own
@@ -145,8 +153,11 @@ play_dialogue() {
         if [[ $DRY_RUN -eq 1 ]]; then
           echo "  [DRY RUN — command not executed]"
         else
-          # Allow command to fail — we WANT it to fail at hook/policy points
-          eval "$cmd" || true
+          # Allow command to fail — we WANT it to fail at hook/policy
+          # points. Stream stderr through the deny-keyword colorizer so
+          # kubectl Forbidden / VAP / hook DENY messages flash red on
+          # the projector.
+          { eval "$cmd" 2> >(_colorize_denies >&2) || true; }
         fi
         ;;
       "@pause"*)

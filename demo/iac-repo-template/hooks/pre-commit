@@ -4,6 +4,10 @@
 
 set -euo pipefail
 
+# Bold bright red for deny output (projector readability).
+RED=$'\033[1;91m'
+RESET=$'\033[0m'
+
 PROTECTED_PATHS=("infrastructure/production/")
 NON_HUMAN_EMAIL_PATTERNS=("claude-agent" "anthropic.local" "@bot" "agent@" "noreply@")
 
@@ -12,13 +16,13 @@ committer_email=$(git config user.email 2>/dev/null || echo "")
 for pattern in "${NON_HUMAN_EMAIL_PATTERNS[@]}"; do
   if [[ "$committer_email" == *"$pattern"* ]]; then
     cat >&2 <<EOF
-GIT_HOOK_DENY: Commits from non-human identities are not allowed in this repo.
+${RED}GIT_HOOK_DENY: Commits from non-human identities are not allowed in this repo.
 
 Detected committer: $committer_email
 Pattern matched:    $pattern
 
 This repo accepts commits only from human reviewers in the mlops-platform group.
-Agent-driven changes must go through a signed PR with human approval.
+Agent-driven changes must go through a signed PR with human approval.${RESET}
 EOF
     exit 1
   fi
@@ -31,10 +35,10 @@ while IFS= read -r file; do
   for protected in "${PROTECTED_PATHS[@]}"; do
     if [[ "$file" == "$protected"* ]]; then
       cat >&2 <<EOF
-GIT_HOOK_DENY: $file is on a protected path ($protected).
+${RED}GIT_HOOK_DENY: $file is on a protected path ($protected).
 
 This path requires a signed PR from a human reviewer in the mlops-platform
-group. Direct commits are blocked.
+group. Direct commits are blocked.${RESET}
 EOF
       exit 1
     fi
