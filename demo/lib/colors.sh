@@ -28,6 +28,8 @@ YELLOW=$'\033[1;93m'
 RED=$'\033[1;91m'
 RED_BOLD=$'\033[1;91m'
 WHITE=$'\033[1;97m'
+MAGENTA=$'\033[1;95m'
+ORANGE=$'\033[1;38;5;208m'    # 256-color orange — between yellow and red
 
 # High-contrast status badges. Background colors + foreground chosen
 # for max readability on a black-background terminal whose projector

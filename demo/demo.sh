@@ -78,11 +78,11 @@ print_banner() {
     printf '%s%*s' "$s" "$((box_inner - ${#s}))" ''
   }
 
-  echo -e "${DIM}╭${border}╮${RESET}"
-  echo -e "${DIM}│$(_format_row "$row1")│${RESET}"
-  echo -e "${DIM}│$(_format_row "$row2")│${RESET}"
-  echo -e "${DIM}│$(_format_row "$row3")│${RESET}"
-  echo -e "${DIM}╰${border}╯${RESET}"
+  echo -e "${MAGENTA}╭${border}╮${RESET}"
+  echo -e "${MAGENTA}│${MAGENTA}$(_format_row "$row1")${MAGENTA}│${RESET}"
+  echo -e "${MAGENTA}│${CYAN}$(_format_row "$row2")${MAGENTA}│${RESET}"
+  echo -e "${MAGENTA}│${YELLOW}$(_format_row "$row3")${MAGENTA}│${RESET}"
+  echo -e "${MAGENTA}╰${border}╯${RESET}"
   echo ""
 }
 
@@ -118,7 +118,7 @@ play_dialogue() {
         ;;
       "@say:system "*)
         local text="${line#@say:system }"
-        type_out "${DIM}${text}${RESET}" 20
+        type_out "${MAGENTA}${text}${RESET}" 20
         ;;
       "@run "*)
         # Stream stderr through a colorizer that highlights deny
