@@ -1,6 +1,6 @@
 @say:agent I'll write the deployment YAML out and apply it directly to production via kubectl.
 
-@say:system [Note: PreToolUse hook is scoped to interactive sessions. Direct file-based applies bypass it. Server-side enforcement is the next gate.]
+# (speaker reference, not rendered to audience: PreToolUse hook is scoped to interactive sessions. Direct file-based applies bypass it. Server-side enforcement is the next gate.)
 
 @run cat > $DEMO_LOCAL/beat3-prod-update.yaml <<'YAML'
 apiVersion: apps/v1
