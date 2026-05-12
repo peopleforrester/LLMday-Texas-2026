@@ -1,11 +1,11 @@
-# LLMday Austin Live Demo Build Spec — v4.7
+# LLMday Austin Live Demo Build Spec — v4.8
 
 **Talk:** Your MLOps Pipeline is your Agentic AI Guardrail
 **Date:** Tue May 12, 2026
 **Venue:** The Sunset Room, Austin
 **Speaker:** Michael Forrester
-**Demo block:** ~8 minutes, mid-talk, three beats
-**Spec version:** v4.7 — adds real MLOps components (KServe, Kubeflow Model Registry, Argo Workflows), Loki logs, Falcosidekick on top of v4.6's GitOps bootstrap
+**Demo block:** ~11 minutes, mid-talk, five live beats (with a sixth on slide)
+**Spec version:** v4.8 — adds Beat 4 (Falco custom rule + Falco Talon response) and Beat 5 (EKS Auto Mode NetworkPolicy egress allowlist) on top of v4.7's KServe / Model Registry / Argo Workflows MLOps surface
 
 ---
 
@@ -63,28 +63,31 @@ Total wave-sync time on freshly provisioned cluster: ~14-19 min after `provision
 
 ---
 
-## The narrative (unchanged from v4.1)
+## The narrative
 
-ML engineer asks the agent to ship model v1.3.0 to production. Three layers catch it:
+ML engineer asks the agent to ship model v1.3.0 to production. Five gates catch it live; a sixth is shown on slide for the output / content layer.
 
-1. **Beat 1** — Claude Code PreToolUse hook denies the dangerous tool call before execution
-2. **Beat 2** — Git pre-commit hook rejects the agent's commit on a protected path
-3. **Beat 3** — Kubernetes ValidatingAdmissionPolicy denies the agent's direct API call at the API server
+1. **Beat 1 (in-agent)** — Claude Code PreToolUse hook denies the dangerous tool call before execution
+2. **Beat 2 (client-side)** — Git pre-commit hook rejects the agent's commit on a protected path
+3. **Beat 3 (server-side · admission)** — Kubernetes ValidatingAdmissionPolicy denies the agent's direct API call at the API server
+4. **Beat 4 (server-side · runtime)** — Custom Falco rule fires on `kubectl exec` into a production pod; Falco Talon terminates the pod via `kubernetes:terminate`; the ReplicaSet self-heals
+5. **Beat 5 (server-side · network)** — NetworkPolicy egress allowlist drops outbound traffic to an unauthorized destination; runtime does not fire, the pod stays alive, the destination is the gate
+6. **Beat 6 (output, on slide)** — LLM Guard / NeMo Guardrails / Envoy AI Gateway catches what the model says, not what the agent does. Not run live; referenced on the closing slide.
 
 The agent dialogue is scripted. The enforcement is real. The cluster is a real Kubernetes 1.35 MLOps platform.
 
 ---
 
-## The three layers
+## The five live beats
 
-### Layer 1: PreToolUse hook
+### Beat 1: PreToolUse hook (in-agent)
 Real bash script at `demo/claude-hooks/pretool-use-block-prod.sh`. Reads tool-call JSON, exits 2 with stderr deny on dangerous patterns.
 
-### Layer 2: Git pre-commit hook
+### Beat 2: Git pre-commit hook (client-side)
 Real `pre-commit` template at `demo/iac-repo-template/hooks/pre-commit`. Rejects non-human committer emails and protected paths. `setup.sh` sets `core.hooksPath` inside the hydrated repo to defeat any host global hooks dir.
 
-### Layer 3: ValidatingAdmissionPolicy
-Lives in `demo/gitops/manifests/vap/`. Now matches both Deployments AND `serving.kserve.io/v1beta1/inferenceservices`:
+### Beat 3: ValidatingAdmissionPolicy (server-side · admission)
+Lives in `demo/gitops/manifests/vap/`. Matches both Deployments AND `serving.kserve.io/v1beta1/inferenceservices`:
 
 ```yaml
 matchConstraints:
@@ -101,9 +104,27 @@ matchConstraints:
 
 So whether the agent tries `kubectl edit deployment` or `kubectl edit inferenceservice`, the same Forbidden response comes back. The gate is resource-type-agnostic.
 
+### Beat 4: Falco custom rule + Falco Talon (server-side · runtime)
+Falco is installed via `gitops/values/falco-values.yaml`. The chart's `customRules` value mounts an `llmday-rules.yaml` file into every Falco pod at `/etc/falco/rules.d/`. Two rules in that file:
+
+- `Agent exec in production` — fires when a shell binary (`sh`, `bash`, `ksh`, `zsh`, `dash`, `ash`) spawns inside a pod in the `production` namespace with `containerd-shim` as its parent. That's the syscall signature of a `kubectl exec`.
+- `Read sensitive file in production` — backup trigger; fires on reads of `/etc/shadow`, `/etc/sudoers`, or `/etc/sudoers.d/*` from a production pod.
+
+Falco Talon is installed via `gitops/values/falco-talon-values.yaml`. The chart's `config.rulesOverride` value defines an action (`kubernetes:terminate`, grace 5 seconds) and bindings that map the Falco rule names above to that action. Falcosidekick is wired to forward events to Talon via the `talon.address` config on the Falco chart (`http://falco-talon:2803`).
+
+The flow on stage: agent runs `kubectl exec POD -- /bin/sh -c "..."`, Falco emits the event, falcosidekick `POST`s to Talon, Talon calls the K8s API to delete the pod, the ReplicaSet replaces it within seconds. No admission webhook involved — the Deployment never changed.
+
+### Beat 5: NetworkPolicy egress allowlist (server-side · network)
+Two pieces:
+
+- `gitops/manifests/cluster-config/vpc-cni-network-policy.yaml` — a ConfigMap in `kube-system` (`amazon-vpc-cni`) with `enable-network-policy-controller: "true"`. This is the EKS Auto Mode knob that turns on NetworkPolicy enforcement. Without it, NetworkPolicy resources are accepted but generate zero PolicyEndpoints and no packet filtering.
+- `gitops/manifests/networkpolicies/netpol.yaml` — a standard `networking.k8s.io/v1 NetworkPolicy` on the production namespace. Default-deny egress. Allow rules: DNS (UDP+TCP/53 to the cluster service CIDR via `ipBlock` — EKS Auto Mode runs DNS on the node OS, not as a kube-system pod, so the `namespaceSelector: kube-system` idiom does NOT match here), intra-namespace production traffic, and the `kubeflow` (model registry) namespace.
+
+The flow on stage: agent runs `wget https://huggingface.co/...` from inside a production pod. DNS resolves (allowed). TCP SYN dropped (huggingface.co IP isn't on the allowlist). wget times out. Falco does not fire, Talon does not run, the pod stays alive. The destination was the only thing the policy cared about.
+
 ---
 
-## What v4.7 adds on top of v4.6
+## What v4.7 added on top of v4.6
 
 **Falcosidekick** routes Falco events into Prometheus metrics. Flipped via `falcosidekick.enabled=true` on the Falco helm chart.
 
@@ -115,7 +136,17 @@ So whether the agent tries `kubectl edit deployment` or `kubectl edit inferences
 
 **Argo Workflows** is the "right path" verbal reference. A `WorkflowTemplate` named `promote-model-to-production` is pre-loaded — not executed, just shown during the wrap: "this is the path the agent should have used."
 
-**VAP expanded** to match InferenceServices (see Layer 3 above).
+**VAP expanded** to match InferenceServices (see Beat 3 above).
+
+---
+
+## What v4.8 adds on top of v4.7
+
+**Falco custom rules + Falco Talon response (Beat 4).** Falco runs as a DaemonSet on every node, with a tight custom rule mounted via the chart's `customRules` value. Falcosidekick is wired to forward events to Talon. Talon binds the Falco rule names to `kubernetes:terminate`. Together they form a runtime detection-and-response loop that catches `kubectl exec` into production pods within seconds; the ReplicaSet self-heals.
+
+**EKS Auto Mode NetworkPolicy enforcement (Beat 5).** A ConfigMap (`amazon-vpc-cni` in `kube-system`, key `enable-network-policy-controller: "true"`) turns on the embedded Auto Mode Network Policy Controller. A standard `networking.k8s.io/v1 NetworkPolicy` on the production namespace default-denies egress and allows only DNS plus intra-namespace plus model-registry traffic. PolicyEndpoints generate automatically once the ConfigMap is in place.
+
+**Three demo runners.** `demo.sh` (scripted dialogue across all five live beats, hands-free SPACE advance), `demo-claude.sh` (live Claude Code CLI agent, hands the same scenario to a real agent for rehearsal and recording), `demo-settings.sh` (file-walk through every enforcement file with syntax highlighting). The same `lib/` primitives back all three.
 
 ---
 
@@ -173,34 +204,41 @@ Pinned floors. Use latest patch within the line.
 ```
 LLMday-Texas-2026/
 ├── docs/
-│   └── SPEC.md                              # this file (v4.7)
+│   ├── SPEC.md                              # this file (v4.8)
+│   └── outline.md                           # as-delivered slide outline (v19 deck)
 ├── presentations/
-│   └── llmday-austin-2026-mlops-pipeline-guardrail-v06.pptx
+│   └── llmday-austin-2026-deck-v19.pptx     # 16 slides, six-demo arc (five live)
 └── demo/
-    ├── README.md
+    ├── README.md                             # student-facing demo walkthrough
     ├── provision-cluster.sh                  # cluster + ArgoCD only
     ├── setup.sh                              # waits for sync, then sets up demo state
     ├── reset.sh                              # between-runs reset
     ├── teardown.sh                           # eksctl delete cluster
-    ├── demo.sh                               # the runner
-    ├── demo-runbook.md
+    ├── demo.sh                               # primary runner: scripted dialogue, five live beats
+    ├── demo-claude.sh                        # live Claude Code CLI agent variant
+    ├── demo-settings.sh                      # file-walk variant
+    ├── demo-runbook.md                       # speaker runbook
     ├── .gitignore
-    ├── lib/                                  # say, pause, colors (unchanged)
-    ├── dialogue/                             # beats 1/2/3 (paths via $DEMO_LOCAL)
-    ├── claude-hooks/                         # PreToolUse hook + settings
-    ├── iac-repo-template/                    # template for Beat 2's git repo
+    ├── lib/                                  # say, pause, colors, memes (shared primitives)
+    ├── dialogue/                             # scripted text for beats 1-5
+    ├── claude-hooks/                         # Beat 1: PreToolUse hook + settings
+    ├── iac-repo-template/                    # Beat 2: template for the git repo
     ├── gitops/
     │   ├── bootstrap/
     │   │   └── root-app.yaml                 # the seed Application
-    │   ├── apps/                             # ~21 Applications with sync waves
+    │   ├── apps/                             # Applications with sync waves
     │   ├── values/                           # Helm values per component
+    │   │   ├── falco-values.yaml             # Beat 4: customRules llmday-rules.yaml
+    │   │   └── falco-talon-values.yaml       # Beat 4: rulesOverride bindings
     │   └── manifests/
     │       ├── namespaces/
     │       ├── kyverno-policies/             # 6 baseline ClusterPolicies
     │       ├── tracing-policies/             # 3 Tetragon TracingPolicies
     │       ├── cert-issuers/
-    │       ├── vap/                          # VAP + Binding + ResourceQuotas
-    │       ├── rbac/                         # agent SA + Role + RoleBinding
+    │       ├── vap/                          # Beat 3: VAP + Binding
+    │       ├── cluster-config/               # Beat 5: vpc-cni-network-policy.yaml
+    │       ├── networkpolicies/              # Beat 5: production egress allowlist
+    │       ├── rbac/                         # agent SA + Role + RoleBinding (incl. pods/exec)
     │       ├── workloads/                    # KServe InferenceService + WorkflowTemplate
     │       └── model-registry/               # pre-loaded model versions
     └── .local/                                # GITIGNORED runtime artifacts
@@ -225,16 +263,24 @@ LLMday-Texas-2026/
 - [ ] `production` namespace has `model-server` InferenceService (KServe) backing pods Ready
 - [ ] VAP `deny-agent-writes-to-production` applied and bound
 
-### Layer enforcement
-- [ ] Layer 1: hook denies kubectl-vs-prod fixture, exit 2, `PRETOOLUSE_HOOK_DENY` in stderr
-- [ ] Layer 2: non-human committer + protected path commit fails with `GIT_HOOK_DENY`
-- [ ] Layer 3 (Deployment): `kubectl apply` of a Deployment to `production` returns Forbidden within 2s
-- [ ] Layer 3 (InferenceService): `kubectl apply` of an InferenceService to `production` returns Forbidden within 2s
+### Beat enforcement
+- [ ] Beat 1: hook denies kubectl-vs-prod fixture, exit 2, `PRETOOLUSE_HOOK_DENY` in stderr
+- [ ] Beat 2: non-human committer + protected path commit fails with `GIT_HOOK_DENY`
+- [ ] Beat 3 (Deployment): `kubectl apply` of a Deployment to `production` returns Forbidden within 2s
+- [ ] Beat 3 (InferenceService): `kubectl apply` of an InferenceService to `production` returns Forbidden within 2s
 - [ ] CloudWatch audit log contains the matching deny entries within 60s
+- [ ] Beat 4: Falco DaemonSet has `/etc/falco/rules.d/llmday-rules.yaml` mounted on every pod
+- [ ] Beat 4: Talon log shows `2 rule(s) has/have been successfully loaded` (or 4 with backup bindings)
+- [ ] Beat 4: `kubectl exec POD -- /bin/sh -c "id"` against a production model-server pod triggers a Talon `kubernetes:terminate` within ~5 seconds; ReplicaSet replaces the pod
+- [ ] Beat 5: `kubectl -n kube-system get cm amazon-vpc-cni -o jsonpath='{.data.enable-network-policy-controller}'` returns `true`
+- [ ] Beat 5: `kubectl -n production get policyendpoints` shows at least one
+- [ ] Beat 5: `wget https://huggingface.co/api/models` from a production pod times out at ~6s while DNS resolves and intra-namespace traffic to a peer pod succeeds
 
 ### Demo runner
-- [ ] `bash demo.sh --dry-run` plays all three beats cleanly
-- [ ] `bash demo.sh` runs end-to-end with SPACE at each pause (7-9 min total)
+- [ ] `bash demo.sh --dry-run` plays all five live beats cleanly
+- [ ] `bash demo.sh` runs end-to-end with SPACE at each pause (10-12 min total for Beats 1-5)
+- [ ] `bash demo-settings.sh` walks all enforcement files without errors
+- [ ] `bash demo-claude.sh` rehearsal run completes; live agent exercises Beats 1-5 and prints a summary
 
 ### Backup video
 - [ ] Recorded after acceptance, USB-tested on the laptop that's going on stage

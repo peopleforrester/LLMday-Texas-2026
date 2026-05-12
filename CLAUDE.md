@@ -5,8 +5,9 @@ This repo holds the talk artifacts for the LLMday Austin 2026 talk "Your MLOps P
 ## What lives here
 
 - `mlops-as-agentic-guardrail.md`: the canonical article (Opinion piece) with the Agentic Covenants Matrix mapping. Ready for Micropub publication.
-- `presentations/`: the v06 slide deck as delivered.
-- `docs/outline.md`: as-delivered 19-slide outline derived from the deck.
+- `presentations/llmday-austin-2026-deck-v19.pptx`: the slide deck as delivered. 16 slides, six-demo arc (five live, one on slide).
+- `docs/outline.md`: as-delivered slide outline derived from the deck.
+- `demo/`: the live terminal demo (EKS Auto Mode + GitOps), runs the five live gates from the deck on a real cluster.
 - `PROJECT_STATE.md`: current status and remaining work.
 
 ## What does NOT live here
