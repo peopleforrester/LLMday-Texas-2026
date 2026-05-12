@@ -39,8 +39,12 @@ chmod 600 "$DEMO_LOCAL/operator-kubeconfig"
 export KUBECONFIG="$DEMO_LOCAL/operator-kubeconfig"
 
 # ----- Wait for ArgoCD apps to be Healthy + Synced --------------------------
+# Wait for all ArgoCD Applications to be Synced. Tolerate Health=Degraded
+# for CRD-only Helm charts (ArgoCD marks them Degraded because there are
+# no live workloads to monitor — that's expected, not a failure).
 echo "==> waiting for GitOps tree to be fully synced (timeout ${SYNC_TIMEOUT}s)"
 START=$SECONDS
+CRD_ONLY_APPS_REGEX='^(spire-crds|kserve-crd)$'
 while [ $((SECONDS - START)) -lt "$SYNC_TIMEOUT" ]; do
   if ! kubectl -n argocd get applications >/dev/null 2>&1; then
     echo "   ArgoCD CRDs not yet available; waiting..."
@@ -48,20 +52,26 @@ while [ $((SECONDS - START)) -lt "$SYNC_TIMEOUT" ]; do
     continue
   fi
   TOTAL=$(kubectl -n argocd get applications -o name 2>/dev/null | wc -l)
-  HEALTHY=$(kubectl -n argocd get applications -o jsonpath='{range .items[?(@.status.health.status=="Healthy")]}H{end}' 2>/dev/null | wc -c)
-  SYNCED=$(kubectl -n argocd get applications -o jsonpath='{range .items[?(@.status.sync.status=="Synced")]}S{end}' 2>/dev/null | wc -c)
 
-  UNHEALTHY=$(kubectl -n argocd get applications \
-    -o jsonpath='{range .items[?(@.status.health.status!="Healthy")]}{.metadata.name}{" "}{end}' 2>/dev/null)
+  # Unsynced = anything not Synced
   UNSYNCED=$(kubectl -n argocd get applications \
     -o jsonpath='{range .items[?(@.status.sync.status!="Synced")]}{.metadata.name}{" "}{end}' 2>/dev/null)
 
+  # Unhealthy = anything not Healthy AND not in the CRD-only allowlist
+  ALL_UNHEALTHY=$(kubectl -n argocd get applications \
+    -o jsonpath='{range .items[?(@.status.health.status!="Healthy")]}{.metadata.name}{" "}{end}' 2>/dev/null)
+  UNHEALTHY=""
+  for app in $ALL_UNHEALTHY; do
+    if ! [[ "$app" =~ $CRD_ONLY_APPS_REGEX ]]; then
+      UNHEALTHY="$UNHEALTHY$app "
+    fi
+  done
+
   if [ -z "${UNHEALTHY// }" ] && [ -z "${UNSYNCED// }" ] && [ "$TOTAL" -gt 0 ]; then
-    echo "✅ all $TOTAL Applications Healthy + Synced"
+    echo "✅ all $TOTAL Applications Synced (CRD-only apps may report Degraded — that is expected)"
     break
   fi
-  printf "   [t+%ds] total=%d healthy_chars=%d synced_chars=%d\n" \
-    "$((SECONDS - START))" "$TOTAL" "$HEALTHY" "$SYNCED"
+  printf "   [t+%ds] total=%d\n" "$((SECONDS - START))" "$TOTAL"
   [ -n "${UNHEALTHY// }" ] && echo "      unhealthy: $UNHEALTHY"
   [ -n "${UNSYNCED// }" ]  && echo "      unsynced:  $UNSYNCED"
   sleep 20
