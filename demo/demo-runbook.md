@@ -60,7 +60,7 @@ kubectl --kubeconfig=.local/operator-kubeconfig -n falco logs deploy/falco-talon
 1. SLIDE for "Demo 1 of 6 · LIVE" (PreToolUse hook) visible
 2. Switch display to terminal
 3. **SAY:**
-   > *"What you're watching is a real EKS Auto Mode cluster running Kubernetes 1.35. Real MLOps platform: KServe InferenceService backed by a Kubeflow Model Registry, ArgoCD reconciling from git, Kyverno plus native admission policies, Tetragon eBPF runtime, Falco with Falco Talon, NetworkPolicy on production. This is a scripted recreation. The agent dialogue is scripted so the timing matches my narration. The hooks, the git rejection, the K8s denial, the Falco-and-Talon kill, the NetworkPolicy drop — all real. Let me show you."*
+   > *"What you're watching is a real EKS Auto Mode cluster running Kubernetes 1.35. Real MLOps platform: a Deployment in production with a Kubeflow Model Registry behind it, ArgoCD reconciling from git, Kyverno plus a native ValidatingAdmissionPolicy, Tetragon eBPF runtime, Falco with Falco Talon, and a NetworkPolicy on production. This is a scripted recreation. The agent dialogue is scripted so the timing matches my narration. The hooks, the git rejection, the K8s denial, the Falco-and-Talon kill, the NetworkPolicy drop — all real. Let me show you."*
 4. Press SPACE to begin Beat 1.
 5. Narrate **over** the agent's typing. Do not read what's on screen verbatim.
 6. **When the hook fires (red bold output)**, pause, let the audience read, then resume:
