@@ -1,0 +1,58 @@
+---
+# Beat 5 — Egress NetworkPolicy for the production namespace.
+#
+# Default-deny egress from production with a tight allowlist. The
+# allowlist covers DNS (port 53 to the cluster service CIDR — EKS
+# Auto Mode runs DNS on the node OS, NOT as a kube-system pod, so
+# the canonical "namespaceSelector: kube-system + port 53" idiom
+# does NOT match anything here; an ipBlock is what works on this
+# CNI) plus intra-namespace production traffic.
+#
+# Demo's bypass attempt: agent exec's into a production pod and runs
+# `wget https://huggingface.co/...`. DNS resolves (allowed), then the
+# TCP SYN to the resolved address is dropped by this policy because
+# huggingface.co's IP is not in any allowlisted CIDR or namespace.
+# wget hangs and times out. The audience sees that no Falco rule
+# fired and no Talon action ran: the destination simply wasn't on
+# the list. That's the architectural point of NetworkPolicy as a
+# distinct layer from runtime detection.
+#
+# Prerequisite: the cluster's amazon-vpc-cni ConfigMap in kube-system
+# must have `enable-network-policy-controller: "true"`. That's wired
+# in via demo/gitops/manifests/cluster-config/vpc-cni-network-policy.yaml.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: production-egress-allowlist
+  namespace: production
+  annotations:
+    llmday.demo/beat: "5"
+    llmday.demo/purpose: "Default-deny egress; allow only DNS + intra-namespace"
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # DNS — TCP+UDP/53 to anywhere in the cluster service CIDR.
+    # EKS Auto Mode answers DNS from the node (not from a pod), and
+    # the cluster's DNS service IP is 10.100.0.10 inside
+    # serviceIpv4Cidr=10.100.0.0/16.
+    - to:
+        - ipBlock:
+            cidr: 10.100.0.0/16
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Intra-namespace production traffic — model-server pods to each
+    # other, sidecars, the production-internal service mesh, etc.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: production
+    # Internal model registry — Kubeflow's namespace.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kubeflow

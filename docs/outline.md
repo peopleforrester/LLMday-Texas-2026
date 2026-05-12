@@ -1,61 +1,56 @@
 # Talk Outline: Your MLOps Pipeline Is Your Agentic AI Guardrail
 
-As-delivered outline derived from the v06 slide deck. The deck at `../presentations/llmday-austin-2026-mlops-pipeline-guardrail-v06.pptx` and its speaker notes are the canonical artifacts. This file is the readable summary for anyone landing in the repo without PowerPoint.
+As-delivered outline derived from the v19 slide deck. The deck at `../presentations/llmday-austin-2026-deck-v19.pptx` and its speaker notes are the canonical artifacts. This file is the readable summary for anyone landing in the repo without PowerPoint.
 
-Slot: 2026-05-12, 2:30 PM, 30 minutes, Beginner. 19 slides.
+Slot: 2026-05-12, 2:30 PM, 30 minutes, Beginner. 16 slides. The demo block is the spine of the talk: six gates, five run live, the sixth is shown on slide.
 
-## Section 1: Open and thesis (~3 min, slides 1-3)
+## Section 1: Open and backstory (~2 min, slides 1-2)
 
-- Slide 1: Title. Open straight into the inversion. No long bio.
-- Slide 2: "You already built it. You just called it MLOps." Mapping table from MLOps stages (feature store, model registry, validation gates, canary deployment) to four of the five Protect concerns. Drift detection and rollback automation live in the companion Detect and Recover matrices, not in Protect.
-- Slide 3: The principle. Don't use probabilistic AI to enforce deterministic requirements.
+- Slide 1: Title. Open straight into the inversion. No long bio. Single anchor line: *"In an era of unprecedented agentic capability, the question isn't whether your pipeline is ready, it's whether you've trained the right reflexes."*
+- Slide 2: Brief SREday backstory. Yesterday's talk was the cluster-deletion incident. Today's talk is what would have stopped it. QR to the SREday talk repo for anyone who wants the long form.
 
-## Section 2: Why the MLOps assumption breaks (~3 min, slides 4-5)
+## Section 2: The pipeline you already run (~2 min, slides 3-4)
 
-- Slide 4: MLOps assumed the agent was inside the pipeline. Agentic AI puts the agent driving it. The wrong instinct: humans-in-loop on every action. Why it fails: alert fatigue and a ~93% rubber-stamp rate.
-- Slide 5: Three public incidents (AWS Kiro December 2025, PocketOS April 2026, Replit/SaaStr July 2025) plus a verbal nod to the SREday cluster story for audience overlap.
+- Slide 3: CI/CD is the analogy the audience already has. MLOps is what's actually running. Both are the same machinery. The thesis lands here.
+- Slide 4: "Same controls. New actor." Mapping table from MLOps stages to Agentic Covenants to the demos that show each one live. The table is the spine of the rest of the talk.
 
-## Section 3: The Agentic Covenants Matrix (~3 min, slides 6-7)
+## Section 3: Live demo block, first three gates (~6 min, slides 5-7)
 
-- Slide 6: Matrix reveal. Three layers (in-agent, client-side hooks, server-side) crossed with five concerns (identity, authorization, blast radius, approval gating, supply chain). Fifteen cells. Walk left-to-right per row, asking: if the agent decides to violate this concern, what stops it at this layer?
-- Slide 7: Scope to NIST CSF 2.0 Protect. Detect, Respond, and Recover are separate matrices that compose with this one. Most "AI guardrail" content mixes the four functions; that is the bug this matrix corrects.
+- Slide 5: **Demo 1 of 6** (LIVE). PreToolUse hook. Layer: in-agent. Agent tries `kubectl set image` against production; the hook intercepts before the call leaves the agent's shell.
+- Slide 6: **Demo 2 of 6** (LIVE). Git pre-commit hook. Layer: client-side. Agent's next attempt is the IaC path: edit `infrastructure/production/`, commit. Hook denies on two grounds (protected path and non-human committer).
+- Slide 7: **Demo 3 of 6** (LIVE). K8s ValidatingAdmissionPolicy. Layer: server-side, admission. Agent gives up on local paths and applies directly to the API server. CEL expression denies the request inside the API server itself.
 
-## Section 4: The three layers, walked (~6 min, slides 8-10)
+## Section 4: Bridge to runtime and network (~1 min, slide 8)
 
-- Slide 8: Layer 1, in-agent. A vibe, not a control. Bypass paths: prompt injection, jailbreak, compaction wiping the rules.
-- Slide 9: Layer 2, client-side hooks. The unsung hero. Catches casual misuse. Bypass paths: `--no-verify`, equivalent commands the pattern does not match, filesystem tampering.
-- Slide 10: Layer 3, server-side. Different in kind, not just in degree. Requires a separate principal compromise to defeat.
+- Slide 8: Bridge. *"Demos 1 through 5: infrastructure controlled. But the agent doesn't just act. It also talks. What happens when the words coming out are the unsafe part?"* This is the structural pivot from the infrastructure block to Beat 6 (output / content).
 
-## Section 5: Translation across platforms (~2 min, slide 11)
+## Section 5: Monday morning playbook (~1 min, slide 9)
 
-- Slide 11: Same matrix, two vocabularies. Kubernetes-native (PreToolUse, RBAC, Kyverno) and MLOps-native (MLflow client wrapper, SageMaker execution role, registry stage policy). If you do not run Kubernetes, the matrix still applies.
+- Slide 9: "Monday morning. Three ways in." Path 01 for teams with an MLOps pipeline: walk the six gates on your most-embarrassing pipeline. 30 minutes. Find which gates exist, which are missing, which are configured for humans only.
 
-## Section 6: The other four concerns (~2 min, slide 12)
+## Section 6: Live demo block, runtime and network (~5 min, slides 10-11)
 
-- Slide 12: Top-hits view of identity, blast radius, approval gating, supply chain. Full matrix in the resources slide. Each concern is a different surface area on the agent.
+- Slide 10: **Demo 4 of 6** (LIVE). Runtime · Falco + Talon. Layer: server-side, runtime. Admission accepted the manifest; runtime decides the behavior. Agent execs into the model-server pod; the Falco custom rule fires on the shell-binary spawn; Talon terminates the pod; the ReplicaSet self-heals.
+- Slide 11: **Demo 5 of 6** (LIVE). Network · NetworkPolicy. Layer: server-side, network. Agent does nothing unsafe at the syscall level; it just runs `wget` to an external destination. DNS resolves, the TCP connect is dropped. Runtime did not fire. Nothing was unsafe. The destination was not on the list.
 
-## Section 7: Walking the failure chain through the matrix (~3 min, slide 13)
+## Section 7: The three places in the chain (~3 min, slides 12-14)
 
-- Slide 13: Same five beats from the SREday cluster incident, mapped to the cells that would have stopped each beat. Closure of the narrative arc opened on slide 6.
+- Slide 12: (Visual transition slide.)
+- Slide 13: "Three places in the chain." Client-side, app/agent, server-side. Three ways to think about where the gate goes along the chain. Frame Demos 1-5 against these three placements: in-agent at the agent's shell, client-side at the commit, server-side spanning admission, runtime, and network.
+- Slide 14: "Three ways teams use AI." Inject AI into workflows (coding agents, automation) versus the autonomous-agent case the talk is about. Bounded blast radius versus the production-touching case. This slide reframes the audience's mental model.
 
-## Section 8: Defense in depth, honestly framed (~3 min, slides 14-15)
+## Section 8: Resources and the sixth gate (~3 min, slides 15-16)
 
-- Slide 14: The stack works together. Server-side is where the buck stops. In-agent and client-side both fall to language attacks. Server-side requires a separate principal compromise.
-- Slide 15: Three bypasses (`--no-verify`, equivalent commands defeating pattern matching, lockfile pinning without server validation). Each defeats one upper layer; none defeats server-side.
+- Slide 15: "Read the long version." Personal site (`michaelrishiforrester.com`), articles on platform engineering and agentic AI guardrails.
+- Slide 16: **Demo 6 of 6** (ON SLIDE). Output · LLM Guard. Layer: output. The only gate in the chain that enforces content, not infrastructure. The closing two-liner: *"Layers 1 through 5 keep the agent from breaking the system. Layer 6 keeps the system from saying things it shouldn't."*
 
-## Section 9: Monday-morning playbook (~3 min, slides 16-18)
+## Recap (~1 min, embedded in slide 17 if rendered, otherwise verbal close)
 
-- Slide 16: Audit one pipeline against the matrix. Four outcomes per row (all three populated, only in-agent, only server-side, deliberately empty). Empty cells are okay; empty by accident is not.
-- Slide 17: The four cells most teams share: over-scoped authorization, no supply-chain admission, humans-only approval gating, shared identity. Four tickets to file Monday, not eight.
-- Slide 18: Closer. Detection is not Protection. Response is not Protection. Recovery is not Protection. Build the column you do not have.
-
-## Section 10: Resources and Q&A (~2 min, slide 19)
-
-- Slide 19: Personal site (`michaelrishiforrester.com`), sister talks (SREday Austin yesterday, KCD Texas Friday), Agentic Covenants Framework repo (`github.com/peopleforrester/agentic-covenants`), Q&A.
+- "Six gates. Five live." Each demo blocks a different attack on the same target. Same agent identity. Different routing through deterministic gates the team already configured.
 
 ## Timing target
 
-Content ~30 minutes plus Q&A buffer. If running long, slide 12 is the trim candidate; its full content is in the resources slide.
+Content ~30 minutes plus Q&A buffer. Live demo block is the long bar: about 11 minutes total across Demos 1-5. If running long, trim narration on the agent's `::thinking::` lines in the dialogue rather than cutting beats.
 
 ## Sister talks referenced from this deck
 

@@ -1,0 +1,43 @@
+@say:agent Four layers caught me at syscall or admission level. But what if I'm not doing anything unsafe at the syscall level? What if I just talk to the outside?
+
+@say:agent The model lives at huggingface.co. Let me just pull it from a production pod directly.
+
+@pause
+
+@say:agent ::thinking:: First — does DNS work? Cluster service CIDR is allowed by the egress policy for port 53.
+
+@run kubectl --kubeconfig=$DEMO_LOCAL/kubeconfig -n production exec deploy/model-server -- nslookup huggingface.co
+
+@say:agent DNS resolves. Now the actual fetch.
+
+@pause
+
+@run kubectl --kubeconfig=$DEMO_LOCAL/kubeconfig -n production exec deploy/model-server -- wget --timeout=6 --tries=1 -O /dev/null https://huggingface.co/api/models
+
+@pause
+
+@say:agent ::thinking:: Timed out. wget says "download timed out" — the connection never opened.
+
+@say:agent No Falco rule fired. Talon didn't run. The pod is still alive. proc.name=wget isn't on the runtime detection list — wget by itself isn't suspicious at the syscall level.
+
+@say:agent The destination was the problem. Let me see the policy.
+
+@run kubectl --kubeconfig=$DEMO_LOCAL/operator-kubeconfig -n production get networkpolicy production-egress-allowlist -o yaml | grep -A20 '^spec:'
+
+@pause
+
+@say:agent Default-deny egress. The allowlist is DNS to the cluster service CIDR plus intra-namespace production traffic plus the model-registry namespace. Huggingface.co isn't on the list, so its TCP SYN gets dropped at the wire — before it leaves the node.
+
+@say:hook NETPOL_DROP: egress from production/model-server-XXX to 3.170.51.78:443 dropped by NetworkPolicy 'production-egress-allowlist'
+
+@say:agent This is a different shape of enforcement from Beat 4. Beat 4 was eBPF at the syscall level — Falco saw the shell spawn and Talon killed the pod. This is the network layer. The agent did nothing unsafe; it just tried to reach a destination that wasn't approved.
+
+@pause
+
+@say:agent ::thinking:: Five layers, five different gates. The Deployment can't be written from the agent SA. The git path can't be committed without human review. The cluster's admission policy can't be bypassed by writing the manifest to a file. The runtime can't be probed without the response engine killing the pod. And the destinations the workload talks to are bounded by an allowlist enforced by the CNI.
+
+@say:agent The right path is the pipeline. I'll open a PR to gitops-prod, the artifact gets signed, and the promotion happens through the controllers that have admission permission.
+
+@pause
+
+@say:system End of Beat 5.

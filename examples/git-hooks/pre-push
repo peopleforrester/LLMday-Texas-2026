@@ -1,0 +1,248 @@
+#!/usr/bin/env bash
+# ABOUTME: Git pre-push hook — Tiers 2 and 3 of the tiered hook system.
+# ABOUTME: Tier 2 (all pushes): secret scan + unit tests. Tier 3 (main only): e2e gate.
+
+set -euo pipefail
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+ERRORS=0
+
+# ---------------------------------------------------------------------------
+# Helper: check if a command exists
+# ---------------------------------------------------------------------------
+has_cmd() { command -v "$1" &>/dev/null; }
+
+# ---------------------------------------------------------------------------
+# Per-repo opt-out: .direct-push-allowed skips all pre-push checks
+# ---------------------------------------------------------------------------
+if [ -f "$REPO_ROOT/.direct-push-allowed" ]; then
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Per-repo granular opt-outs
+# ---------------------------------------------------------------------------
+[ -f "$REPO_ROOT/.skip-unit-tests" ] && SKIP_UNIT_TESTS=true || SKIP_UNIT_TESTS=false
+[ -f "$REPO_ROOT/.skip-e2e" ] && SKIP_E2E=true || SKIP_E2E=false
+
+# ---------------------------------------------------------------------------
+# Detect project stack
+# ---------------------------------------------------------------------------
+HAS_PYTHON=false
+HAS_NODE=false
+HAS_RUST=false
+HAS_GO=false
+
+[ -f "$REPO_ROOT/pyproject.toml" ] || [ -f "$REPO_ROOT/setup.py" ] || [ -f "$REPO_ROOT/setup.cfg" ] && HAS_PYTHON=true
+[ -f "$REPO_ROOT/package.json" ] && HAS_NODE=true
+[ -f "$REPO_ROOT/Cargo.toml" ] && HAS_RUST=true
+[ -f "$REPO_ROOT/go.mod" ] && HAS_GO=true
+
+# ---------------------------------------------------------------------------
+# Parse stdin to detect target branch
+# Git sends lines: <local-ref> <local-sha> <remote-ref> <remote-sha>
+# ---------------------------------------------------------------------------
+PUSHING_TO_MAIN=false
+DIFF_BASE=""
+ZERO_SHA="0000000000000000000000000000000000000000"
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+    if echo "$remote_ref" | grep -qE '(refs/heads/main|refs/heads/master)$'; then
+        PUSHING_TO_MAIN=true
+    fi
+    # Capture the range of commits being pushed for scoped secret scan
+    if [ "$remote_sha" = "$ZERO_SHA" ]; then
+        # New branch — scan all files in the push
+        DIFF_BASE=""
+    else
+        DIFF_BASE="$remote_sha"
+    fi
+done
+
+# ============================================================================
+# TIER 2: All pushes — security scan + unit tests
+# ============================================================================
+
+echo "[pre-push] Tier 2 — security scan + unit tests"
+
+# ---------------------------------------------------------------------------
+# Security scan: check for secrets in staged content
+# ---------------------------------------------------------------------------
+echo "[pre-push] Scanning for secrets..."
+SECRET_PATTERNS='(AKIA[0-9A-Z]{16}|sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}|-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----)'
+
+# Scope scan to files changed in this push (not all tracked files)
+SECRETS_FOUND=false
+if [ -n "$DIFF_BASE" ]; then
+    # Existing branch — scan only files changed since remote HEAD
+    CHANGED_FILES=$(git diff --name-only "$DIFF_BASE"..HEAD 2>/dev/null || git ls-files)
+else
+    # New branch or couldn't determine base — scan all tracked files
+    CHANGED_FILES=$(git ls-files)
+fi
+
+while IFS= read -r file; do
+    if [ -z "$file" ]; then continue; fi
+    if [ -f "$file" ] && grep -qI '' "$file" 2>/dev/null; then
+        if grep -EnP "$SECRET_PATTERNS" "$file" 2>/dev/null | head -5; then
+            echo "  ^^^ potential secret in: $file"
+            SECRETS_FOUND=true
+        fi
+    fi
+done <<< "$CHANGED_FILES"
+
+# Check for .env files in the changed set (or all tracked files on new branch)
+ENV_FILES=$(echo "$CHANGED_FILES" | grep -E '\.env$|\.env\.(local|production|staging)$' || true)
+if [ -n "$ENV_FILES" ]; then
+    echo "  WARNING: .env files are tracked in git:"
+    echo "$ENV_FILES" | sed 's/^/    /'
+    SECRETS_FOUND=true
+fi
+
+if [ "$SECRETS_FOUND" = true ]; then
+    echo ""
+    echo "[pre-push] BLOCKED — potential secrets detected. Remove them before pushing."
+    echo "  If these are false positives, add patterns to .secretsignore (not yet supported)"
+    echo "  or remove the files from git tracking with: git rm --cached <file>"
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Unit tests: run the appropriate test suite
+# ---------------------------------------------------------------------------
+if [ "$SKIP_UNIT_TESTS" = true ]; then
+    echo "[pre-push] Unit tests skipped (.skip-unit-tests)"
+else
+echo "[pre-push] Running unit tests..."
+
+TESTS_RAN=false
+
+if [ "$HAS_PYTHON" = true ]; then
+    if has_cmd uv; then
+        echo "  Python: uv run pytest -x -q"
+        if ! uv run pytest -x -q 2>&1; then
+            ERRORS=$((ERRORS + 1))
+        fi
+        TESTS_RAN=true
+    elif has_cmd pytest; then
+        echo "  Python: pytest -x -q"
+        if ! pytest -x -q 2>&1; then
+            ERRORS=$((ERRORS + 1))
+        fi
+        TESTS_RAN=true
+    fi
+fi
+
+if [ "$HAS_NODE" = true ]; then
+    if has_cmd npm; then
+        # Only run if a test script exists in package.json
+        if node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts.test ? 0 : 1)" 2>/dev/null; then
+            echo "  Node: npm test"
+            if ! npm test 2>&1; then
+                ERRORS=$((ERRORS + 1))
+            fi
+            TESTS_RAN=true
+        fi
+    fi
+fi
+
+if [ "$HAS_RUST" = true ]; then
+    if has_cmd cargo; then
+        echo "  Rust: cargo test"
+        if ! cargo test --quiet 2>&1; then
+            ERRORS=$((ERRORS + 1))
+        fi
+        TESTS_RAN=true
+    fi
+fi
+
+if [ "$HAS_GO" = true ]; then
+    if has_cmd go; then
+        echo "  Go: go test ./..."
+        if ! go test ./... 2>&1; then
+            ERRORS=$((ERRORS + 1))
+        fi
+        TESTS_RAN=true
+    fi
+fi
+
+if [ "$TESTS_RAN" = false ]; then
+    echo "  [skip] No test runner detected — skipping unit tests"
+fi
+
+if [ "$ERRORS" -gt 0 ]; then
+    echo ""
+    echo "[pre-push] BLOCKED — unit tests failed. Fix before pushing."
+    exit 1
+fi
+
+fi  # end SKIP_UNIT_TESTS guard
+
+# ============================================================================
+# TIER 3: Push to main/master only — e2e gate
+# ============================================================================
+
+if [ "$PUSHING_TO_MAIN" = true ]; then
+    echo ""
+    echo "[pre-push] Tier 3 — e2e gate (pushing to main)"
+
+    if [ "$SKIP_E2E" = true ]; then
+        echo "  [skip] E2e tests skipped (.skip-e2e)"
+    else
+        E2E_FOUND=false
+        E2E_ERRORS=0
+
+        # Python: tests/e2e/ directory
+        if [ "$HAS_PYTHON" = true ] && [ -d "$REPO_ROOT/tests/e2e" ]; then
+            E2E_FOUND=true
+            echo "  Python e2e: uv run pytest tests/e2e/ -x -q"
+            if has_cmd uv; then
+                uv run pytest tests/e2e/ -x -q 2>&1
+                rc=$?
+                # Exit code 5 = no tests collected (all skipped) — treat as OK
+                if [ "$rc" -ne 0 ] && [ "$rc" -ne 5 ]; then
+                    E2E_ERRORS=$((E2E_ERRORS + 1))
+                fi
+            elif has_cmd pytest; then
+                pytest tests/e2e/ -x -q 2>&1
+                rc=$?
+                if [ "$rc" -ne 0 ] && [ "$rc" -ne 5 ]; then
+                    E2E_ERRORS=$((E2E_ERRORS + 1))
+                fi
+            fi
+        fi
+
+        # Node: test:e2e script in package.json
+        if [ "$HAS_NODE" = true ]; then
+            if node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts['test:e2e'] ? 0 : 1)" 2>/dev/null; then
+                E2E_FOUND=true
+                echo "  Node e2e: npm run test:e2e"
+                if ! npm run test:e2e 2>&1; then
+                    E2E_ERRORS=$((E2E_ERRORS + 1))
+                fi
+            fi
+        fi
+
+        # Generic: scripts/e2e-test.sh
+        if [ -x "$REPO_ROOT/scripts/e2e-test.sh" ]; then
+            E2E_FOUND=true
+            echo "  Generic e2e: scripts/e2e-test.sh"
+            if ! "$REPO_ROOT/scripts/e2e-test.sh" 2>&1; then
+                E2E_ERRORS=$((E2E_ERRORS + 1))
+            fi
+        fi
+
+        if [ "$E2E_FOUND" = false ]; then
+            echo "  [warn] No e2e tests found — allowing push (consider adding tests/e2e/)"
+        elif [ "$E2E_ERRORS" -gt 0 ]; then
+            echo ""
+            echo "[pre-push] BLOCKED — e2e tests failed. Fix before pushing to main."
+            exit 1
+        else
+            echo "  e2e tests passed."
+        fi
+    fi
+fi
+
+echo "[pre-push] All checks passed."
+exit 0

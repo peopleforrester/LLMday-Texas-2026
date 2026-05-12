@@ -1,0 +1,84 @@
+# ABOUTME: Helm values for falcosecurity/falco-talon, chart v0.4.0 / app v0.3.0.
+# ABOUTME: Wires Talon to act on Falco events forwarded by falcosidekick.
+#
+# Story this serves on stage: when an agent slips past admission (e.g. by
+# kubectl exec'ing into a production pod) the custom Falco rule "Agent exec
+# in production" (defined in falco-values.yaml customRules) fires,
+# falcosidekick forwards the event to Talon, and Talon terminates the pod
+# via the kubernetes:terminate actionner. ArgoCD/the ReplicaSet self-heals
+# the Deployment afterwards.
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 2803
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Tolerate the system-only node taint so Talon can land anywhere — the
+# system node has plenty of headroom while the general-purpose node is
+# under heavy ArgoCD/Kyverno/Falco load.
+tolerations:
+  - operator: Exists
+
+# RBAC: the chart's default ClusterRole already includes pod
+# delete/list/get, which is what kubernetes:terminate uses.
+serviceAccount:
+  create: true
+
+# Inline rules override. Chart template appends this to its bundled
+# rules.yaml (which just defines two default actions); our content adds
+# four rule bindings that map specific Falco rule names to the
+# Terminate Pod action.
+#
+# IMPORTANT — rule names below must match the rule names emitted by
+# Falco. The first two come from falco-values.yaml customRules (the
+# Beat 4 custom rules). The last two are stock Falco rules kept as
+# backup triggers in case the Falco custom rules are ever removed.
+config:
+  rulesOverride: |
+    - action: Terminate Pod
+      actionner: kubernetes:terminate
+      parameters:
+        grace_period_seconds: 5
+        ignore_standalone_pods: true
+
+    - rule: Kill on agent exec in production
+      match:
+        rules:
+          - Agent exec in production
+      actions:
+        - action: Terminate Pod
+
+    - rule: Kill on sensitive file read in production
+      match:
+        rules:
+          - Read sensitive file in production
+      actions:
+        - action: Terminate Pod
+
+    - rule: Kill on stock terminal shell in production
+      match:
+        rules:
+          - Terminal shell in container
+        output_fields:
+          - k8s.ns.name=production
+      actions:
+        - action: Terminate Pod
+
+    - rule: Kill on stock sensitive file read in production
+      match:
+        rules:
+          - Read sensitive file untrusted
+          - Read sensitive file trusted after startup
+        output_fields:
+          - k8s.ns.name=production
+      actions:
+        - action: Terminate Pod

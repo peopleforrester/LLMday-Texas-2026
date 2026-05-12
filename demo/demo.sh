@@ -133,6 +133,23 @@ play_dialogue() {
         _colorize_denies() {
           sed -u -E "s/(DENY|Forbidden|denied|VAP|ValidatingAdmissionPolicy|HOOK_DENY)/$(printf '\033[1;91m')\1$(printf '\033[0m')/gI"
         }
+        # Strip the boilerplate kubectl apply prints around a Forbidden:
+        # the Warning: line, the last-applied-configuration JSON patch dump,
+        # the "to:" separator, the Resource:/Name: identity lines, and the
+        # long "for: \"<path>\": error when patching \"<path>\":" prefix.
+        # What's left is the actual ValidatingAdmissionPolicy / Kyverno
+        # message the audience needs to read. The full output still
+        # reaches $_tmpout via tee, so DENY detection for the status
+        # badge still works.
+        _filter_kubectl_noise() {
+          sed -u -E \
+            -e '/^Warning:/d' \
+            -e '/^\{/d' \
+            -e '/^to:$/d' \
+            -e '/^Resource:/d' \
+            -e '/^Name:/d' \
+            -e 's|^for: "[^"]+": error when patching "[^"]+": |deny: |'
+        }
         local cmd="${line#@run }"
         # Detect a heredoc on this @run line and slurp subsequent dialogue
         # lines into the command until we hit the terminator on its own
@@ -172,11 +189,20 @@ play_dialogue() {
           # lets us decide ALLOWED / DENIED / ERROR.
           local _tmpout
           _tmpout=$(mktemp)
-          local _exit
-          { eval "$cmd" 2>&1 | tee "$_tmpout" | _colorize_denies; } || true
-          _exit=${PIPESTATUS[0]}
+          local _exit=0
+          # Capture PIPESTATUS[0] INSIDE the brace group, BEFORE `|| true`
+          # runs. The old form `{ pipeline; } || true; _exit=${PIPESTATUS[0]}`
+          # always read 0 because `|| true` is itself a command and PIPESTATUS
+          # is replaced by its (always-zero) exit.
+          { eval "$cmd" 2>&1 | tee "$_tmpout" | _filter_kubectl_noise | _colorize_denies; _exit=${PIPESTATUS[0]}; } || true
+          # The status badge keys off three signals, in order of priority:
+          # explicit deny phrases from the enforcement layers, then
+          # auth/not-found/RBAC failures (so we don't paint a kubectl auth
+          # error green), then non-zero exit, else allowed.
           if grep -qE "DENY|Forbidden|denied|HOOK_DENY|ValidatingAdmissionPolicy" "$_tmpout" 2>/dev/null; then
             echo -e "${BADGE_DENIED} ✗ DENIED ${RESET}"
+          elif grep -qE "Unauthorized|cannot list|cannot get|cannot create|cannot exec|NotFound|expired|invalid bearer token" "$_tmpout" 2>/dev/null; then
+            echo -e "${BADGE_ERROR} ⚠ ERROR (kubectl auth or RBAC) ${RESET}"
           elif (( _exit != 0 )); then
             echo -e "${BADGE_ERROR} ⚠ ERROR (exit ${_exit}) ${RESET}"
           else
@@ -209,7 +235,7 @@ play_dialogue() {
 print_banner
 
 if [[ $RESUME_BEAT -le 1 ]]; then
-  type_out "${DIM}Starting demo. Three beats. Scripted dialogue. Real enforcement.${RESET}" 15
+  type_out "${DIM}Starting demo. Five beats. Scripted dialogue. Real enforcement.${RESET}" 15
   echo ""
   pause "press SPACE to begin Beat 1 — PreToolUse hook"
   clear
@@ -235,8 +261,28 @@ if [[ $RESUME_BEAT -le 3 ]]; then
   play_dialogue "$DEMO_ROOT/dialogue/beat3-vap.txt"
 fi
 
+if [[ $RESUME_BEAT -le 4 ]]; then
+  echo ""
+  pause "press SPACE to begin Beat 4 — Runtime (Falco + Talon)"
+  clear
+  print_banner
+  play_dialogue "$DEMO_ROOT/dialogue/beat4-runtime.txt"
+fi
+
+if [[ $RESUME_BEAT -le 5 ]]; then
+  echo ""
+  pause "press SPACE to begin Beat 5 — NetworkPolicy"
+  clear
+  print_banner
+  play_dialogue "$DEMO_ROOT/dialogue/beat5-network.txt"
+fi
+
 echo ""
 echo -e "${MAGENTA}End of demo. Return to slides.${RESET}"
+echo ""
+echo -e "${WHITE}Layers 1 through 5 keep the agent from breaking the system.${RESET}"
+echo -e "${WHITE}Layer 6 keeps the system from saying things it shouldn't.${RESET}"
+echo ""
 # Ender Dragon: the final-boss server-side gate that held.
 show_meme enderdragon
 echo ""

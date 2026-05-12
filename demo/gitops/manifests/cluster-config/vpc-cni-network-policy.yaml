@@ -1,0 +1,24 @@
+---
+# Enables the EKS Auto Mode Network Policy Controller. Without this
+# ConfigMap (or with `enable-network-policy-controller: "false"`),
+# the cluster's CNI does NOT enforce `networking.k8s.io/v1
+# NetworkPolicy` resources: the API accepts them, the CRDs are
+# present, but no PolicyEndpoints are generated and no packet
+# filtering happens. The ConfigMap is read directly by the embedded
+# Auto Mode CNI; it does not require an aws-node DaemonSet (there
+# isn't one in Auto Mode) and it does not require a node restart.
+#
+# This is the prerequisite for Beat 5 (the NetworkPolicy
+# demonstration).
+#
+# Reference:
+# https://docs.aws.amazon.com/eks/latest/userguide/auto-net-pol.html
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: amazon-vpc-cni
+  namespace: kube-system
+  annotations:
+    llmday.demo/purpose: "Enable EKS Auto Mode NetworkPolicy enforcement (Beat 5 prereq)"
+data:
+  enable-network-policy-controller: "true"

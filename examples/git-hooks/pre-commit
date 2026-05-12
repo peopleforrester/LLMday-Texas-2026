@@ -1,0 +1,194 @@
+#!/usr/bin/env bash
+# ABOUTME: Git pre-commit hook — Tier 1 of the tiered hook system.
+# ABOUTME: Runs fast lint and type checks on staged files only (<5s target).
+
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Collect staged files (Added, Copied, Modified only — skip deleted files)
+# ---------------------------------------------------------------------------
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
+
+if [ -z "$STAGED_FILES" ]; then
+    exit 0  # Nothing staged — nothing to check
+fi
+
+# ---------------------------------------------------------------------------
+# Docs-only bypass: skip lint/typecheck when all staged files are docs
+# ---------------------------------------------------------------------------
+_docs_only=true
+while IFS= read -r _file; do
+    case "$_file" in
+        *.md|*.txt|*.rst|*.png|*.jpg|*.jpeg|*.svg|*.gif|*.webp|*.ico) ;;
+        *) _docs_only=false; break ;;
+    esac
+done <<< "$STAGED_FILES"
+
+if [ "$_docs_only" = true ]; then
+    echo "[pre-commit] Docs-only commit — skipping lint/typecheck."
+    exit 0
+fi
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+ERRORS=0
+
+# ---------------------------------------------------------------------------
+# Per-repo opt-outs via dotfiles
+# ---------------------------------------------------------------------------
+[ -f "$REPO_ROOT/.skip-lint" ] && SKIP_LINT=true || SKIP_LINT=false
+[ -f "$REPO_ROOT/.skip-typecheck" ] && SKIP_TYPECHECK=true || SKIP_TYPECHECK=false
+
+if [ "$SKIP_LINT" = true ] && [ "$SKIP_TYPECHECK" = true ]; then
+    echo "[pre-commit] All checks skipped (.skip-lint + .skip-typecheck)"
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Helper: check if a command exists
+# ---------------------------------------------------------------------------
+has_cmd() { command -v "$1" &>/dev/null; }
+
+# ---------------------------------------------------------------------------
+# Helper: warn when a linter is missing (non-blocking)
+# ---------------------------------------------------------------------------
+warn_missing() {
+    echo "  [skip] $1 not installed — skipping $2 checks"
+}
+
+# ---------------------------------------------------------------------------
+# Detect project stack by config files present at repo root
+# ---------------------------------------------------------------------------
+HAS_PYTHON=false
+HAS_NODE=false
+HAS_RUST=false
+HAS_GO=false
+
+[ -f "$REPO_ROOT/pyproject.toml" ] || [ -f "$REPO_ROOT/setup.py" ] || [ -f "$REPO_ROOT/setup.cfg" ] && HAS_PYTHON=true
+[ -f "$REPO_ROOT/package.json" ] && HAS_NODE=true
+[ -f "$REPO_ROOT/Cargo.toml" ] && HAS_RUST=true
+[ -f "$REPO_ROOT/go.mod" ] && HAS_GO=true
+
+# ---------------------------------------------------------------------------
+# Filter staged files by extension
+# ---------------------------------------------------------------------------
+PY_FILES=$(echo "$STAGED_FILES" | grep -E '\.pyi?$' || true)
+TS_FILES=$(echo "$STAGED_FILES" | grep -E '\.(ts|tsx)$' || true)
+JS_FILES=$(echo "$STAGED_FILES" | grep -E '\.(js|jsx)$' || true)
+RS_FILES=$(echo "$STAGED_FILES" | grep -E '\.rs$' || true)
+GO_FILES=$(echo "$STAGED_FILES" | grep -E '\.go$' || true)
+
+# ---------------------------------------------------------------------------
+# Python: ruff lint on staged .py files
+# ---------------------------------------------------------------------------
+if [ "$SKIP_LINT" = true ]; then
+    echo "  [skip] Python lint (.skip-lint)"
+elif [ -n "$PY_FILES" ] && [ "$HAS_PYTHON" = true ]; then
+    echo "[pre-commit] Python lint..."
+    if has_cmd ruff; then
+        # shellcheck disable=SC2086
+        if ! ruff check --no-fix $PY_FILES; then
+            ERRORS=$((ERRORS + 1))
+        fi
+    else
+        warn_missing "ruff" "Python lint"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Python: mypy type check on staged .py files (uses cache — fast)
+# ---------------------------------------------------------------------------
+if [ "$SKIP_TYPECHECK" = true ]; then
+    echo "  [skip] Python type check (.skip-typecheck)"
+elif [ -n "$PY_FILES" ] && [ "$HAS_PYTHON" = true ]; then
+    if has_cmd mypy; then
+        echo "[pre-commit] Python type check..."
+        # shellcheck disable=SC2086
+        if ! mypy --incremental --no-error-summary $PY_FILES 2>/dev/null; then
+            ERRORS=$((ERRORS + 1))
+        fi
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# TypeScript / JavaScript: biome or eslint on staged files
+# ---------------------------------------------------------------------------
+FRONTEND_FILES=""
+[ -n "$TS_FILES" ] && FRONTEND_FILES="$TS_FILES"
+[ -n "$JS_FILES" ] && FRONTEND_FILES="$FRONTEND_FILES $JS_FILES"
+FRONTEND_FILES=$(echo "$FRONTEND_FILES" | xargs)
+
+if [ "$SKIP_LINT" = true ]; then
+    [ -n "$FRONTEND_FILES" ] && [ "$HAS_NODE" = true ] && echo "  [skip] JS/TS lint (.skip-lint)"
+elif [ -n "$FRONTEND_FILES" ] && [ "$HAS_NODE" = true ]; then
+    echo "[pre-commit] JS/TS lint..."
+    if has_cmd biome; then
+        # shellcheck disable=SC2086
+        if ! biome check --no-errors-on-unmatched $FRONTEND_FILES; then
+            ERRORS=$((ERRORS + 1))
+        fi
+    elif has_cmd eslint; then
+        # shellcheck disable=SC2086
+        if ! eslint --no-error-on-unmatched-pattern $FRONTEND_FILES; then
+            ERRORS=$((ERRORS + 1))
+        fi
+    else
+        warn_missing "biome/eslint" "JS/TS lint"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# TypeScript: tsc --noEmit type check (uses tsbuildinfo cache)
+# ---------------------------------------------------------------------------
+if [ "$SKIP_TYPECHECK" = true ]; then
+    [ -n "$TS_FILES" ] && [ "$HAS_NODE" = true ] && echo "  [skip] TypeScript type check (.skip-typecheck)"
+elif [ -n "$TS_FILES" ] && [ "$HAS_NODE" = true ]; then
+    if has_cmd tsc; then
+        echo "[pre-commit] TypeScript type check..."
+        if ! tsc --noEmit --incremental 2>/dev/null; then
+            ERRORS=$((ERRORS + 1))
+        fi
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Rust: clippy on staged .rs files
+# ---------------------------------------------------------------------------
+if [ "$SKIP_LINT" = true ]; then
+    [ -n "$RS_FILES" ] && [ "$HAS_RUST" = true ] && echo "  [skip] Rust lint (.skip-lint)"
+elif [ -n "$RS_FILES" ] && [ "$HAS_RUST" = true ]; then
+    echo "[pre-commit] Rust lint..."
+    if has_cmd cargo; then
+        if ! cargo clippy --quiet -- -D warnings 2>/dev/null; then
+            ERRORS=$((ERRORS + 1))
+        fi
+    else
+        warn_missing "cargo" "Rust lint"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Go: go vet on staged .go files
+# ---------------------------------------------------------------------------
+if [ "$SKIP_LINT" = true ]; then
+    [ -n "$GO_FILES" ] && [ "$HAS_GO" = true ] && echo "  [skip] Go vet (.skip-lint)"
+elif [ -n "$GO_FILES" ] && [ "$HAS_GO" = true ]; then
+    echo "[pre-commit] Go vet..."
+    if has_cmd go; then
+        if ! go vet ./... 2>/dev/null; then
+            ERRORS=$((ERRORS + 1))
+        fi
+    else
+        warn_missing "go" "Go vet"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Final verdict
+# ---------------------------------------------------------------------------
+if [ "$ERRORS" -gt 0 ]; then
+    echo ""
+    echo "[pre-commit] BLOCKED — fix the above errors before committing."
+    exit 1
+fi
+
+exit 0

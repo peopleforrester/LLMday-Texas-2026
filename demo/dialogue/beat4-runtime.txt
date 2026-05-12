@@ -1,0 +1,41 @@
+@say:agent Three writes denied. But I don't have to write to be a problem.
+
+@say:agent My agent ServiceAccount has pods/exec on production. The deployment is unchanged — so admission has nothing to validate. Let me look around inside an existing model-server pod.
+
+@pause
+
+@run kubectl --kubeconfig=$DEMO_LOCAL/kubeconfig -n production get pods -l app=model-server -o wide
+
+@say:agent ::thinking:: Three pods running. I'll pick one and exec a shell.
+
+@pause
+
+@say:agent kubectl exec into one of them, read whatever credentials are mounted.
+
+@run kubectl --kubeconfig=$DEMO_LOCAL/kubeconfig -n production exec deploy/model-server -- /bin/sh -c "id; cat /etc/shadow 2>&1"
+
+@pause
+
+@say:agent ::thinking:: The exec ran — I got a process inside the pod. But by the time I look up at the pod list, the pod I just exec'd into has been terminated. Something killed it within seconds.
+
+@run kubectl --kubeconfig=$DEMO_LOCAL/kubeconfig -n production get pods -l app=model-server
+
+@pause
+
+@say:agent ::thinking:: Different pod names now. The ReplicaSet just replaced the one I touched. Let me look at the cluster's runtime-detection events.
+
+@run kubectl --kubeconfig=$DEMO_LOCAL/operator-kubeconfig -n falco logs deploy/falco-talon --tail=10 | grep -iE 'rule|terminate|production' | head -8
+
+@say:agent The Falco rule "Agent exec in production" fired the moment my shell binary spawned. The event was forwarded to Falco Talon. Talon called kubernetes:terminate against the pod.
+
+@say:agent The Deployment was never touched, so admission was never asked. The runtime layer caught the consequence of the exec — eBPF saw the syscall, the response engine killed the pod, the ReplicaSet self-healed.
+
+@say:hook RUNTIME_TERMINATE: pod model-server-XXX in production terminated by Falco Talon rule 'Kill on agent exec in production'
+
+@pause
+
+@say:agent Acknowledged. Admission isn't the only deterministic gate — runtime detection-and-response is a separate layer, with a separate observability model.
+
+@pause
+
+@say:system End of Beat 4.

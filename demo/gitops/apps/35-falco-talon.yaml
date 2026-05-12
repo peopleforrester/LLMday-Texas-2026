@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: falco-talon
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://falcosecurity.github.io/charts
+      chart: falco-talon
+      targetRevision: 0.4.0
+      helm:
+        releaseName: falco-talon
+        valueFiles:
+          - $values/demo/gitops/values/falco-talon-values.yaml
+    - repoURL: https://github.com/peopleforrester/LLMday-Texas-2026
+      targetRevision: staging
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: falco
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]

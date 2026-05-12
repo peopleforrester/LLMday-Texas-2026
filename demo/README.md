@@ -1,16 +1,21 @@
-# LLMday Austin Demo · Three-Layer Pipeline Guardrails (EKS Auto Mode + GitOps)
+# LLMday Austin Demo · Six Gates, Five Live (EKS Auto Mode + GitOps)
 
 A live, scripted terminal demo for the talk *"Your MLOps Pipeline is your Agentic AI Guardrail"* delivered at LLMday Austin on May 12, 2026.
 
-The demo shows three layers of an existing MLOps pipeline catching an AI agent that tries to ship a model update to production:
+The demo shows six gates of an existing MLOps pipeline catching an AI agent that tries to ship a model update to production. Five run live; the sixth is shown on slide. The six gates span the three architectural layers from the Agentic Covenants Matrix (in-agent, client-side, server-side):
 
-1. **Claude Code PreToolUse hook** — denies the dangerous tool call before execution
-2. **Git pre-commit hook** — rejects the agent's commit on a protected path
-3. **Kubernetes ValidatingAdmissionPolicy** — denies the agent's direct API call at the EKS API server
+| Demo | Gate | Layer |
+|---|---|---|
+| 1 | Claude Code PreToolUse hook | In-agent |
+| 2 | Git pre-commit hook | Client-side |
+| 3 | Kubernetes ValidatingAdmissionPolicy | Server-side · admission |
+| 4 | Falco custom rule + Falco Talon response | Server-side · runtime |
+| 5 | Kubernetes NetworkPolicy egress allowlist | Server-side · network |
+| 6 | LLM Guard / NeMo Guardrails (output filter) | Output (shown on slide) |
 
-The agent dialogue is scripted (for predictable timing on stage). The enforcement is real. The cluster is a real **Amazon EKS Auto Mode** cluster running Kubernetes 1.35, bootstrapped via **GitOps (ArgoCD app-of-apps with sync waves)** to a full MLOps platform.
+The agent dialogue is scripted, for predictable timing on stage. The enforcement is real. The cluster is a real **Amazon EKS Auto Mode** cluster running Kubernetes 1.35, bootstrapped via **GitOps (ArgoCD app-of-apps with sync waves)** to a full MLOps platform. Falco's custom rule, Falco Talon's response binding, the EKS Auto Mode NetworkPolicy enable flag, and the production egress allowlist are all GitOps-managed under `gitops/`.
 
-Build spec: `../docs/SPEC.md` (v4.7).
+Build spec: `../docs/SPEC.md`.
 
 ---
 
@@ -32,10 +37,14 @@ cd <repo>/demo
 
 # 1) Once tonight (~25-30 min total)
 bash provision-cluster.sh     # creates the cluster, installs ArgoCD, applies root-app
-bash setup.sh                 # waits for the 21 ArgoCD apps to Healthy+Synced, issues agent token, verifies all 3 layers
+bash setup.sh                 # waits for the ArgoCD apps to Healthy+Synced, issues agent token, verifies the enforcement chain
 
 # 2) On stage
-bash demo.sh                  # press SPACE at each beat transition
+bash demo.sh                  # press SPACE at each beat transition (scripted dialogue, five live demos)
+
+# Optional alternatives
+bash demo-claude.sh           # hands the same scenario to a live Claude Code agent (variable behavior, real cost)
+bash demo-settings.sh         # walks the enforcement files on disk, beat by beat (file-walk mode)
 
 # 3) Between rehearsal runs (optional)
 bash reset.sh                 # re-hydrates iac-repo, refreshes the agent token
@@ -62,19 +71,21 @@ Environment overrides:
 | Path | What it is |
 |---|---|
 | `provision-cluster.sh` | One-time EKS Auto Mode + ArgoCD install + root-app apply (~14 min) |
-| `setup.sh` | Waits for the 21 Applications to be Healthy+Synced, then sets up demo state and verifies all 3 layers |
+| `setup.sh` | Waits for the ArgoCD apps to be Healthy+Synced, then sets up demo state and verifies the enforcement chain (hook, git, VAP, Falco/Talon, NetworkPolicy) |
 | `reset.sh` | Re-hydrates iac-repo and refreshes the agent token. Cluster stays up. |
 | `teardown.sh` | `eksctl delete cluster` + `.local/` cleanup |
-| `demo.sh` | The runner. Plays scripted dialogue, real enforcement. |
+| `demo.sh` | Primary runner. Plays scripted dialogue across all five live beats with one-key advance. |
+| `demo-claude.sh` | Live-agent variant. Hands the scenario to a real Claude Code CLI session via `claude -p`; the agent attempts every path and prints what fired. Costs API credits; not for stage, use for rehearsal and recording. |
+| `demo-settings.sh` | File-walk variant. Slow-prints each enforcement file (hook, git hook, VAP, Falco rules, Talon binding, vpc-cni enable, NetworkPolicy) with syntax highlighting and auto-pause. |
 | `demo-runbook.md` | Speaker's printed runbook |
-| `lib/` | bash primitives: typing animation, pause-on-spacebar, ANSI colors |
-| `dialogue/` | The three scripted beats + Beat 1's JSON fixture |
-| `claude-hooks/` | Layer 1: PreToolUse hook + reference settings |
+| `lib/` | bash primitives: typing animation, pause-on-spacebar, ANSI colors, shared ASCII memes |
+| `dialogue/` | Scripted dialogue files for all five live beats plus Beat 1's JSON fixture |
+| `claude-hooks/` | Beat 1: PreToolUse hook + reference settings |
 | `iac-repo-template/` | Template for Beat 2's git repo |
 | `gitops/bootstrap/root-app.yaml` | The seed Application |
-| `gitops/apps/` | 21 Application manifests with sync-wave annotations |
-| `gitops/values/` | Helm values per platform component |
-| `gitops/manifests/` | Raw YAML: namespaces, Kyverno policies, Tetragon TracingPolicies, cert issuer, VAP, RBAC, KServe workload, model registry data |
+| `gitops/apps/` | ArgoCD Application manifests with sync-wave annotations |
+| `gitops/values/` | Helm values per platform component, including `falco-values.yaml` (Beat 4 custom rule) and `falco-talon-values.yaml` (Beat 4 response binding) |
+| `gitops/manifests/` | Raw YAML: namespaces, Kyverno policies, Tetragon TracingPolicies, cert issuer, VAP (Beat 3), RBAC, model-server Deployment, model registry data, `cluster-config/` (Beat 5 vpc-cni enable), `networkpolicies/` (Beat 5 production egress allowlist) |
 
 ### Generated at setup time (gitignored)
 
@@ -96,14 +107,15 @@ Everything under `.local/`:
 After `provision-cluster.sh` + GitOps sync completes, the cluster has:
 
 **Enforcement / security**
-- Native Kubernetes ValidatingAdmissionPolicy (matches Deployments AND KServe InferenceServices)
+- Native Kubernetes ValidatingAdmissionPolicy on Deployments and pods in the production namespace. The CEL is resource-type-agnostic; the VAP also matches KServe InferenceServices by design, even though KServe isn't installed in this build (see "MLOps" below). Demo 3.
 - Kyverno with 6 baseline ClusterPolicies (Audit mode, in addition to native VAP)
 - Tetragon with 3 TracingPolicies (sigkill on shell-in-mlops; alert on IMDS access and /etc writes)
-- Falco DaemonSet for runtime detection
-- Falcosidekick routing Falco events to Prometheus
+- Falco DaemonSet for runtime detection, plus a custom rule mounted via the chart's `customRules` value that fires on shell binaries spawned inside production pods with containerd-shim as parent. Demo 4.
+- Falcosidekick routing Falco events to Prometheus and to Falco Talon
+- Falco Talon as the response engine, with `kubernetes:terminate` bindings against the custom rule names. Demo 4.
+- EKS Auto Mode Network Policy Controller enabled via the `amazon-vpc-cni` ConfigMap, plus a production-namespace `NetworkPolicy` that default-denies egress and allows only DNS (via ipBlock against the cluster service CIDR) plus intra-namespace and model-registry traffic. Demo 5.
 
 **Identity / certs**
-- SPIRE server + agent (the in-cluster identity-of-record)
 - cert-manager + self-signed ClusterIssuer
 
 **Observability**
@@ -114,35 +126,47 @@ After `provision-cluster.sh` + GitOps sync completes, the cluster has:
 - EKS audit log exported to CloudWatch
 
 **MLOps**
-- KServe controller (raw deployment mode)
-- `model-server` InferenceService in `production`, sklearn iris model
+- `model-server` plain `Deployment` in `production`, running `nginxinc/nginx-unprivileged:1.27-alpine`. KServe was dropped from the GitOps tree because its Helm chart isn't published at a stable URL; raw manifests weren't justified for this demo. The narrative isn't materially affected: the agent tries to modify a Deployment in production, the gates fire. The model-server manifest documents the decision inline.
 - Kubeflow Model Registry (standalone ConfigMap state with v1.0.0 through v1.3.0)
 - Argo Workflows + a `WorkflowTemplate` named `promote-model-to-production` (verbal reference only)
 
 **GitOps**
-- ArgoCD reconciling 21 Applications via the root app-of-apps
+- ArgoCD reconciling 19 Applications via the root app-of-apps
 - `ServerSideApply=true` for Kyverno's large CRDs
 
 The audience won't see most of this UI during the 8-minute demo. They'll see that it's *there*, in `kubectl get pods -A` and ArgoCD's app list.
 
 ---
 
-## The three beats
+## The five live beats (and the sixth on slide)
 
-### Beat 1 — Claude Code PreToolUse hook
+### Beat 1 — Claude Code PreToolUse hook (in-agent)
 Agent tries `kubectl set image deployment/model-server -n production`. The hook intercepts before execution and exits 2 with stderr deny.
 
 **What fires:** `claude-hooks/pretool-use-block-prod.sh`
 
-### Beat 2 — Git pre-commit hook
-Agent edits `infrastructure/production/model-server.yaml`, runs `git commit`. The hook rejects on two grounds: protected path + non-human committer email.
+### Beat 2 — Git pre-commit hook (client-side)
+Agent edits `infrastructure/production/model-server.yaml`, runs `git commit`. The hook rejects on two grounds: protected path and non-human committer email.
 
-**What fires:** `.local/iac-repo/.git/hooks/pre-commit` (copied from `iac-repo-template/hooks/pre-commit` at setup time, with `core.hooksPath` override to defeat any host global hooks dir)
+**What fires:** `.local/iac-repo/.git/hooks/pre-commit`, copied from `iac-repo-template/hooks/pre-commit` at setup time, with `core.hooksPath` override to defeat any host global hooks dir.
 
-### Beat 3 — Kubernetes ValidatingAdmissionPolicy
-Agent writes the manifest and applies via `kubectl`. The EKS API server denies it via VAP. The deny appears in CloudWatch within ~30s.
+### Beat 3 — Kubernetes ValidatingAdmissionPolicy (server-side, admission)
+Agent writes the manifest to a file and applies it via `kubectl apply -f`. The EKS API server denies it via the native VAP. The deny appears in CloudWatch within about 30 seconds.
 
-**What fires:** `gitops/manifests/vap/vap.yaml` (reconciled by ArgoCD)
+**What fires:** `gitops/manifests/vap/vap.yaml`, reconciled by ArgoCD.
+
+### Beat 4 — Falco custom rule + Falco Talon (server-side, runtime)
+Agent realizes admission has nothing to validate if the Deployment isn't being modified, so it `kubectl exec`s into a model-server pod. The custom Falco rule "Agent exec in production" fires on the shell-binary spawn. Falcosidekick forwards the event to Falco Talon over HTTP, and Talon calls `kubernetes:terminate` against the originating pod. The ReplicaSet self-heals.
+
+**What fires:** `gitops/values/falco-values.yaml` (the `customRules.llmday-rules.yaml` block) plus `gitops/values/falco-talon-values.yaml` (the `config.rulesOverride` rule binding).
+
+### Beat 5 — NetworkPolicy egress allowlist (server-side, network)
+Agent does nothing unsafe at the syscall level. It just runs `wget https://huggingface.co/...` from inside a production pod. DNS resolves, but the TCP SYN is dropped at the wire because huggingface.co is not on the production egress allowlist. Falco does not fire and Talon does not run. The pod stays alive; the destination was the issue.
+
+**What fires:** `gitops/manifests/cluster-config/vpc-cni-network-policy.yaml` (the EKS Auto Mode Network Policy Controller enable knob) plus `gitops/manifests/networkpolicies/netpol.yaml` (the production egress allowlist).
+
+### Beat 6 — Output / content (slide only)
+Layers 1 through 5 catch agent actions on the infrastructure side. Beat 6 catches what the model says. The deck references LLM Guard, NeMo Guardrails, and Envoy AI Gateway as the production implementations; this demo does not run it live. Closing line on the slide: *"Layers 1 through 5 keep the agent from breaking the system. Layer 6 keeps the system from saying things it shouldn't."*
 
 ---
 
@@ -152,7 +176,7 @@ Agent writes the manifest and applies via `kubectl`. The EKS API server denies i
 - **Repo-relative paths.** Every script resolves `$DEMO_ROOT` as `$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)`.
 - **Ephemeral artifacts in `.local/`.** Anything generated by setup is gitignored.
 - **Two kubeconfigs.** `operator-kubeconfig` for setup and `kubectl` debugging (AWS-creds-backed). `kubeconfig` (agent's) is what `demo.sh` runs against (short-lived SA token).
-- **Real enforcement.** All three layers are real scripts and real K8s resources. Only the agent's dialogue is scripted.
+- **Real enforcement.** Every live beat exercises a real script or real K8s resource. Only the agent's dialogue is scripted.
 
 ---
 
@@ -180,7 +204,25 @@ kubectl --kubeconfig=.local/operator-kubeconfig get validatingadmissionpolicy
 kubectl --kubeconfig=.local/operator-kubeconfig get validatingadmissionpolicybinding
 ```
 
-**Token expired** — `reset.sh` refreshes the token. 1-hour TTL by default.
+**Falco rule doesn't fire in Beat 4** — give the Falco DaemonSet a minute to attach its eBPF probes after any rollout. Then check the custom rule is present in each pod and that events are flowing:
+```bash
+kubectl -n falco exec ds/falco -c falco -- ls /etc/falco/rules.d/   # expect llmday-rules.yaml
+kubectl -n falco logs ds/falco -c falco --since=60s | grep '"rule":"Agent exec in production"' | head
+```
+
+**Talon doesn't kill the pod in Beat 4** — verify Talon loaded the rule bindings and that falcosidekick is forwarding:
+```bash
+kubectl -n falco logs deploy/falco-talon --tail=10 | grep 'rule(s) has/have been successfully loaded'
+kubectl -n falco logs deploy/falco-falcosidekick --tail=20 | grep -i 'Talon - POST'
+```
+
+**NetworkPolicy doesn't block in Beat 5** — most common cause is the EKS Auto Mode Network Policy Controller is off. Check the enable ConfigMap and that PolicyEndpoints are being generated:
+```bash
+kubectl -n kube-system get cm amazon-vpc-cni -o jsonpath='{.data.enable-network-policy-controller}'   # expect "true"
+kubectl -n production get policyendpoints                                                              # expect at least one
+```
+
+**Token expired** — `reset.sh` refreshes the token. 1-hour TTL by default; `TOKEN_TTL=8h bash reset.sh` for a longer rehearsal window.
 
 **AWS credentials expired** — re-run `aws sso login` (or refresh `aws-vault`), then re-run `setup.sh`. It regenerates the operator kubeconfig.
 
@@ -194,9 +236,9 @@ EKS control plane + Auto Mode + workload pods + CloudWatch + EBS: roughly **$14-
 
 ## Related
 
-- **Build spec:** `../docs/SPEC.md` (v4.7)
-- **Talk slides:** `../presentations/llmday-austin-2026-mlops-pipeline-guardrail-v06.pptx`
-- **Sister talks:** SREday Austin yesterday, KCD Texas Friday
+- **Build spec:** `../docs/SPEC.md`
+- **Talk slides:** `../presentations/llmday-austin-2026-deck-v19.pptx`
+- **Sister talks:** SREday Austin (May 11), KCD Texas (May 15)
 
 ---
 

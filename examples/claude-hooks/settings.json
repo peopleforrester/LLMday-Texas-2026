@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+
+  "// _NOTE_": [
+    "Example Claude Code settings.json. Copy this into ~/.claude/settings.json",
+    "(or the project-local .claude/settings.json) and adjust to taste.",
+    "Hook command paths use ~/.claude/hooks/ — copy the sibling .sh files",
+    "in this directory there, or change the paths to wherever you keep them.",
+    "Comments are not standard JSON; they live here as `// _xxx_` keys",
+    "which Claude Code ignores but a human reader sees."
+  ],
+
+  "permissions": {
+    "// _what_": "Hard deny list: agent cannot read keys/certs even if it asks.",
+    "defaultMode": "auto",
+    "deny": [
+      "Read(file_path: **/*.pem)",
+      "Read(file_path: **/*.key)",
+      "Read(file_path: **/*_rsa)",
+      "Read(file_path: **/*_ed25519)",
+      "Grep(path: **/*.pem)",
+      "Grep(path: **/*.key)"
+    ]
+  },
+
+  "// _hooks_": [
+    "The six hook event types Claude Code dispatches.",
+    "Each hook is a shell command; exit 2 BLOCKS the tool call (PreToolUse).",
+    "Non-zero exit on other events surfaces a warning but does not block."
+  ],
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "~/.claude/hooks/session-start.sh" }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "// _matcher_": "git commit text — exit 2 if message contains AI/Claude attribution",
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "~/.claude/hooks/check-commit-message.sh" }
+        ]
+      },
+      {
+        "// _matcher_": "edits to .env / .pem / .key / *_rsa — exit 2 to block writes",
+        "matcher": "Edit|Write",
+        "hooks": [
+          { "type": "command", "command": "~/.claude/hooks/block-sensitive-files.sh" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "// _matcher_": "after every Edit/Write: lint and verify the ABOUTME header",
+        "matcher": "Edit|Write",
+        "hooks": [
+          { "type": "command", "command": "~/.claude/hooks/validate-file.sh" },
+          { "type": "command", "command": "~/.claude/hooks/check-aboutme.sh" }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "// _what_": "Re-anchor context after Claude's history compaction so the agent doesn't forget the rules",
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "~/.claude/hooks/auto-reanchor.sh" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "// _what_": "Run the project's tests automatically after the agent finishes a response",
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "~/.claude/hooks/auto-test-on-stop.sh" }
+        ]
+      }
+    ]
+  }
+}

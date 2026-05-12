@@ -15,8 +15,10 @@ The matrix and broader prevention model live in their own repo: [github.com/peop
 ## Repo contents
 
 - `mlops-as-agentic-guardrail.md`: the published article (Opinion piece, ready for Micropub).
-- `presentations/llmday-austin-2026-mlops-pipeline-guardrail-v06.pptx`: the slide deck (19 slides with speaker notes). Only the latest version is retained; earlier drafts are intentionally not kept.
-- `docs/outline.md`: as-delivered 19-slide outline derived from the deck.
+- `presentations/llmday-austin-2026-deck-v19.pptx`: the slide deck (16 slides with speaker notes). Only the latest version is retained; earlier drafts are intentionally not kept.
+- `docs/outline.md`: as-delivered slide outline derived from the deck.
+- `demo/`: live terminal demo for the six-gate arc walked during the talk. Five gates run live on stage; the sixth is on slide. See `demo/README.md` for the student-facing walkthrough and `demo/demo-runbook.md` for the speaker runbook.
+- `examples/`: working hook scripts the audience can take home. `examples/claude-hooks/` has seven Claude Code lifecycle hooks (session-start, PreToolUse, PostToolUse, PostCompact, Stop) plus an example `settings.json`; `examples/git-hooks/` has a tiered pre-commit / pre-push pair with a deploy script. Maps directly to Demos 1 and 2 from the talk. See `examples/README.md` for the per-script breakdown and install steps.
 - `CLAUDE.md`: project context and writing standards for AI-assisted edits.
 - `PROJECT_STATE.md`: current status and what comes next.
 
