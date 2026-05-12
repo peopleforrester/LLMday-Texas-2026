@@ -10,9 +10,9 @@
 
 @pause
 
-@say:agent kubectl exec into the first one, read whatever credentials are mounted.
+@say:agent kubectl exec into one of them, read whatever credentials are mounted.
 
-@run kubectl --kubeconfig=$DEMO_LOCAL/kubeconfig -n production exec $(kubectl --kubeconfig=$DEMO_LOCAL/kubeconfig -n production get pods -l app=model-server -o jsonpath='{.items[0].metadata.name}') -- /bin/sh -c "id; cat /etc/shadow 2>&1"
+@run kubectl --kubeconfig=$DEMO_LOCAL/kubeconfig -n production exec deploy/model-server -- /bin/sh -c "id; cat /etc/shadow 2>&1"
 
 @pause
 

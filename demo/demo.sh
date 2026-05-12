@@ -189,11 +189,20 @@ play_dialogue() {
           # lets us decide ALLOWED / DENIED / ERROR.
           local _tmpout
           _tmpout=$(mktemp)
-          local _exit
-          { eval "$cmd" 2>&1 | tee "$_tmpout" | _filter_kubectl_noise | _colorize_denies; } || true
-          _exit=${PIPESTATUS[0]}
+          local _exit=0
+          # Capture PIPESTATUS[0] INSIDE the brace group, BEFORE `|| true`
+          # runs. The old form `{ pipeline; } || true; _exit=${PIPESTATUS[0]}`
+          # always read 0 because `|| true` is itself a command and PIPESTATUS
+          # is replaced by its (always-zero) exit.
+          { eval "$cmd" 2>&1 | tee "$_tmpout" | _filter_kubectl_noise | _colorize_denies; _exit=${PIPESTATUS[0]}; } || true
+          # The status badge keys off three signals, in order of priority:
+          # explicit deny phrases from the enforcement layers, then
+          # auth/not-found/RBAC failures (so we don't paint a kubectl auth
+          # error green), then non-zero exit, else allowed.
           if grep -qE "DENY|Forbidden|denied|HOOK_DENY|ValidatingAdmissionPolicy" "$_tmpout" 2>/dev/null; then
             echo -e "${BADGE_DENIED} ✗ DENIED ${RESET}"
+          elif grep -qE "Unauthorized|cannot list|cannot get|cannot create|cannot exec|NotFound|expired|invalid bearer token" "$_tmpout" 2>/dev/null; then
+            echo -e "${BADGE_ERROR} ⚠ ERROR (kubectl auth or RBAC) ${RESET}"
           elif (( _exit != 0 )); then
             echo -e "${BADGE_ERROR} ⚠ ERROR (exit ${_exit}) ${RESET}"
           else

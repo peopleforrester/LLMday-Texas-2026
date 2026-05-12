@@ -6,13 +6,13 @@
 
 @say:agent ::thinking:: First — does DNS work? Cluster service CIDR is allowed by the egress policy for port 53.
 
-@run kubectl --kubeconfig=$DEMO_LOCAL/kubeconfig -n production exec $(kubectl --kubeconfig=$DEMO_LOCAL/kubeconfig -n production get pods -l app=model-server -o jsonpath='{.items[0].metadata.name}') -- nslookup huggingface.co
+@run kubectl --kubeconfig=$DEMO_LOCAL/kubeconfig -n production exec deploy/model-server -- nslookup huggingface.co
 
 @say:agent DNS resolves. Now the actual fetch.
 
 @pause
 
-@run kubectl --kubeconfig=$DEMO_LOCAL/kubeconfig -n production exec $(kubectl --kubeconfig=$DEMO_LOCAL/kubeconfig -n production get pods -l app=model-server -o jsonpath='{.items[0].metadata.name}') -- wget --timeout=6 --tries=1 -O /dev/null https://huggingface.co/api/models
+@run kubectl --kubeconfig=$DEMO_LOCAL/kubeconfig -n production exec deploy/model-server -- wget --timeout=6 --tries=1 -O /dev/null https://huggingface.co/api/models
 
 @pause
 
