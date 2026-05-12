@@ -86,60 +86,9 @@ print_banner() {
   echo ""
 }
 
-# ============================================================
-# ASCII memes — inter-beat comic relief.
-# Use sparingly. Each shows up between beats; speaker narrates over it.
-# ============================================================
-show_meme() {
-  local name="$1"
-  echo ""
-  case "$name" in
-    creeper)
-      echo -e "${GREEN}"
-      cat <<'EOF'
-                ┌─────────────────────┐
-                │                     │
-                │    ████       ████  │
-                │    ████       ████  │
-                │                     │
-                │        █████        │
-                │        █████        │
-                │     ███████████     │
-                │     ████   ████     │
-                │     ████   ████     │
-                │                     │
-                └─────────────────────┘
-                        S  S  S  S  .  .  .
-EOF
-      echo -e "${RESET}"
-      echo ""
-      echo -e "                   ${YELLOW}\"Aw, man.\"${RESET}"
-      echo -e "    ${WHITE}— every agent after the PreToolUse hook fires${RESET}"
-      ;;
-    enderdragon)
-      echo -e "${MAGENTA}"
-      cat <<'EOF'
-                  __----~~~~~~~~~~~~----__
-            __--~~                          ~~--__
-         /~                                        ~\
-        |       ●                            ●       |
-        |                                            |
-        |                ╲                ╱          |
-         \                ╲    ━━━━━    ╱           /
-          \                ╲___________╱           /
-           ~~___                                ___~~
-                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-              T H E   E N D E R   D R A G O N
-EOF
-      echo -e "${RESET}"
-      echo ""
-      echo -e "          ${CYAN}server-side enforcement: the final gate${RESET}"
-      echo -e "         ${WHITE}RBAC said yes. The cluster said no.${RESET}"
-      ;;
-  esac
-  echo ""
-}
+# Shared meme art (creeper, ender dragon)
+# shellcheck source=lib/memes.sh
+source "$DEMO_ROOT/lib/memes.sh"
 
 # ============================================================
 # Dialogue file parser
