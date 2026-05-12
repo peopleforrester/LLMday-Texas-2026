@@ -109,7 +109,7 @@ claude --dangerously-skip-permissions --output-format stream-json --verbose -p "
         if .type == "tool_result" then
           (.content | if type == "array" then .[0].text? // (. | tostring) else . | tostring end) as $body |
           if ($body | test("(?i)(DENY|Forbidden|denied|HOOK_DENY|ValidatingAdmissionPolicy)")) then
-            "\n[1;91m→ " + ($body | .[0:600]) + "[0m"
+            "\n[1;91m→ " + ($body | .[0:2500]) + "[0m"
           else
             "\n[37m→ " + ($body | .[0:600]) + "[0m"
           end
