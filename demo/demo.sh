@@ -50,9 +50,12 @@ fi
 # ============================================================
 print_banner() {
   clear
-  # Box inner width must match the dash count in the top/bottom border.
-  # Currently 65 dashes.
-  local box_inner=65
+  # Use the full terminal width. Fall back to 80 cols if we can't probe.
+  local term_width
+  term_width=$(tput cols 2>/dev/null || echo "${COLUMNS:-80}")
+  local box_inner=$((term_width - 2))   # 1 char per border
+  (( box_inner < 40 )) && box_inner=40
+
   local region="${AWS_REGION:-us-east-2}"
   local kube_path="${DEMO_LOCAL/#$HOME/~}/kubeconfig"
 
@@ -61,6 +64,10 @@ print_banner() {
   local row1="  Claude Code${claude_version:+ }${claude_version}"
   local row2="  Connected: EKS Auto Mode (${region})"
   local row3="  Kubeconfig: ${kube_path}"
+
+  # Build a box-drawing border of length box_inner.
+  local border
+  border=$(printf '─%.0s' $(seq 1 "$box_inner"))
 
   # Pad or truncate a row to exactly box_inner chars.
   _format_row() {
@@ -71,11 +78,11 @@ print_banner() {
     printf '%s%*s' "$s" "$((box_inner - ${#s}))" ''
   }
 
-  echo -e "${DIM}╭─────────────────────────────────────────────────────────────────╮${RESET}"
+  echo -e "${DIM}╭${border}╮${RESET}"
   echo -e "${DIM}│$(_format_row "$row1")│${RESET}"
   echo -e "${DIM}│$(_format_row "$row2")│${RESET}"
   echo -e "${DIM}│$(_format_row "$row3")│${RESET}"
-  echo -e "${DIM}╰─────────────────────────────────────────────────────────────────╯${RESET}"
+  echo -e "${DIM}╰${border}╯${RESET}"
   echo ""
 }
 
