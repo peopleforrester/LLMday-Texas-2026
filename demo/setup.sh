@@ -39,43 +39,46 @@ chmod 600 "$DEMO_LOCAL/operator-kubeconfig"
 export KUBECONFIG="$DEMO_LOCAL/operator-kubeconfig"
 
 # ----- Wait for ArgoCD apps to be Healthy + Synced --------------------------
-# Wait for all ArgoCD Applications to be Synced. Tolerate Health=Degraded
-# for CRD-only Helm charts (ArgoCD marks them Degraded because there are
-# no live workloads to monitor — that's expected, not a failure).
-echo "==> waiting for GitOps tree to be fully synced (timeout ${SYNC_TIMEOUT}s)"
+# Wait for the DEMO CRITICAL PATH apps to be Synced+Healthy:
+#   namespaces (production + staging exist)
+#   rbac       (claude-agent SA exists in staging)
+#   admission  (VAP applied)
+# All other apps are background credibility (observability, MLOps,
+# runtime security). They reconcile in their own time and do not gate
+# the demo's three-layer enforcement story. If they're broken on stage
+# day, the talk's narrative is unaffected.
+echo "==> waiting for demo-critical apps (namespaces, rbac, admission) Synced+Healthy"
+CRITICAL_APPS="namespaces rbac admission"
 START=$SECONDS
-CRD_ONLY_APPS_REGEX='^(spire-crds|kserve-crd)$'
 while [ $((SECONDS - START)) -lt "$SYNC_TIMEOUT" ]; do
   if ! kubectl -n argocd get applications >/dev/null 2>&1; then
     echo "   ArgoCD CRDs not yet available; waiting..."
     sleep 10
     continue
   fi
-  TOTAL=$(kubectl -n argocd get applications -o name 2>/dev/null | wc -l)
-
-  # Unsynced = anything not Synced
-  UNSYNCED=$(kubectl -n argocd get applications \
-    -o jsonpath='{range .items[?(@.status.sync.status!="Synced")]}{.metadata.name}{" "}{end}' 2>/dev/null)
-
-  # Unhealthy = anything not Healthy AND not in the CRD-only allowlist
-  ALL_UNHEALTHY=$(kubectl -n argocd get applications \
-    -o jsonpath='{range .items[?(@.status.health.status!="Healthy")]}{.metadata.name}{" "}{end}' 2>/dev/null)
-  UNHEALTHY=""
-  for app in $ALL_UNHEALTHY; do
-    if ! [[ "$app" =~ $CRD_ONLY_APPS_REGEX ]]; then
-      UNHEALTHY="$UNHEALTHY$app "
-    fi
+  PENDING=""
+  for app in $CRITICAL_APPS; do
+    SYNC=$(kubectl -n argocd get app "$app" -o jsonpath='{.status.sync.status}' 2>/dev/null)
+    HEALTH=$(kubectl -n argocd get app "$app" -o jsonpath='{.status.health.status}' 2>/dev/null)
+    [[ "$SYNC" == "Synced" && "$HEALTH" == "Healthy" ]] || PENDING="$PENDING$app($SYNC/$HEALTH) "
   done
-
-  if [ -z "${UNHEALTHY// }" ] && [ -z "${UNSYNCED// }" ] && [ "$TOTAL" -gt 0 ]; then
-    echo "✅ all $TOTAL Applications Synced (CRD-only apps may report Degraded — that is expected)"
+  if [ -z "${PENDING// }" ]; then
+    echo "✅ critical-path apps Synced+Healthy"
     break
   fi
-  printf "   [t+%ds] total=%d\n" "$((SECONDS - START))" "$TOTAL"
-  [ -n "${UNHEALTHY// }" ] && echo "      unhealthy: $UNHEALTHY"
-  [ -n "${UNSYNCED// }" ]  && echo "      unsynced:  $UNSYNCED"
-  sleep 20
+  printf "   [t+%ds] pending: %s\n" "$((SECONDS - START))" "$PENDING"
+  sleep 15
 done
+
+if [ $((SECONDS - START)) -ge "$SYNC_TIMEOUT" ]; then
+  echo "ERROR: critical-path apps did not converge within ${SYNC_TIMEOUT}s." >&2
+  exit 1
+fi
+
+# Snapshot all apps for visibility — non-critical may still be in flight
+echo ""
+echo "==> full ArgoCD app state (FYI):"
+kubectl -n argocd get applications 2>/dev/null | head -25
 
 if [ $((SECONDS - START)) -ge "$SYNC_TIMEOUT" ]; then
   echo "ERROR: GitOps sync did not complete within ${SYNC_TIMEOUT}s. Check ArgoCD UI." >&2
