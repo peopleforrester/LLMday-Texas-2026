@@ -43,15 +43,18 @@ EOF
   exit 2
 fi
 
-# Pattern 3: direct file edit on infrastructure/production
-if echo "$command" | grep -qE '(infrastructure/production/|infrastructure\.production)'; then
-  cat >&2 <<EOF
-${RED}PRETOOLUSE_HOOK_DENY: Edits under infrastructure/production/ require a PR from a
-human reviewer in the mlops-platform group. Agent commits are not permitted on
-this path.${RESET}
-EOF
-  exit 2
-fi
+# Pattern 3 (path matcher) intentionally REMOVED. Earlier versions of
+# this hook denied ANY Bash command whose text referenced
+# infrastructure/production/, which made the demo's three-layer
+# narrative collapse to "Layer 1 catches everything." That's the
+# opposite of the talk's thesis — Layer 1 (client-side hook) is the
+# WEAKEST layer, easily bypassed, and the demo needs the audience to
+# see Layer 2 (git pre-commit hook) and Layer 3 (VAP, server-side)
+# actually fire.
+#
+# Protection of infrastructure/production/ is now correctly handled by
+# the git pre-commit hook in the IaC repo (its protected-path check)
+# rather than by intercepting Bash calls before git even runs.
 
 # Safe by default
 exit 0
