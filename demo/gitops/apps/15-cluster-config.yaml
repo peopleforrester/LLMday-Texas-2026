@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cluster-config
+  namespace: argocd
+  annotations:
+    # Sync-wave -10 (alongside namespaces) so the amazon-vpc-cni
+    # ConfigMap is in place before anything that depends on
+    # NetworkPolicy enforcement is reconciled.
+    argocd.argoproj.io/sync-wave: "-10"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/peopleforrester/LLMday-Texas-2026
+    targetRevision: staging
+    path: demo/gitops/manifests/cluster-config
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [ServerSideApply=true]
