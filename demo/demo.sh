@@ -56,7 +56,9 @@ print_banner() {
   local region="${AWS_REGION:-us-east-2}"
   local kube_path="${DEMO_LOCAL/#$HOME/~}/kubeconfig"
 
-  local row1="  Claude Code 1.2.3"
+  local claude_version
+  claude_version=$(command -v claude >/dev/null 2>&1 && claude --version 2>/dev/null | head -1 || echo "")
+  local row1="  Claude Code${claude_version:+ }${claude_version}"
   local row2="  Connected: EKS Auto Mode (${region})"
   local row3="  Kubeconfig: ${kube_path}"
 
@@ -153,11 +155,23 @@ play_dialogue() {
         if [[ $DRY_RUN -eq 1 ]]; then
           echo "  [DRY RUN — command not executed]"
         else
-          # Allow command to fail — we WANT it to fail at hook/policy
-          # points. Stream stderr through the deny-keyword colorizer so
-          # kubectl Forbidden / VAP / hook DENY messages flash red on
-          # the projector.
-          { eval "$cmd" 2> >(_colorize_denies >&2) || true; }
+          # Stream output AND capture a copy so we can analyze for a
+          # status badge after the command finishes. tee duplicates
+          # the stream; sed colorizes denies inline; the captured copy
+          # lets us decide ALLOWED / DENIED / ERROR.
+          local _tmpout
+          _tmpout=$(mktemp)
+          local _exit
+          { eval "$cmd" 2>&1 | tee "$_tmpout" | _colorize_denies; } || true
+          _exit=${PIPESTATUS[0]}
+          if grep -qE "DENY|Forbidden|denied|HOOK_DENY|ValidatingAdmissionPolicy" "$_tmpout" 2>/dev/null; then
+            echo -e "${BADGE_DENIED} ✗ DENIED ${RESET}"
+          elif (( _exit != 0 )); then
+            echo -e "${BADGE_ERROR} ⚠ ERROR (exit ${_exit}) ${RESET}"
+          else
+            echo -e "${BADGE_ALLOWED} ✓ ALLOWED ${RESET}"
+          fi
+          rm -f "$_tmpout"
         fi
         ;;
       "@pause"*)
