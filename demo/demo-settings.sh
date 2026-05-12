@@ -129,7 +129,7 @@ show_file \
   "Beat 1" \
   "Claude Code PreToolUse hook" \
   "$DEMO_ROOT/claude-hooks/pretool-use-block-prod.sh" \
-  "Reads tool-call JSON on stdin. Exits 2 with stderr deny on three patterns: kubectl WRITE verbs against the production namespace; direct registry push; direct edits to infrastructure/production/. Registered to Claude Code via .claude/settings.json (matcher: Bash)."
+  "Reads tool-call JSON on stdin. Exits 2 with stderr deny on two patterns: kubectl WRITE verbs against the production namespace, and direct registry push. (An earlier path-matcher pattern was deliberately removed so Beats 2 and 3 still get to fire — the in-file comment explains why.) Registered to Claude Code via .claude/settings.json (matcher: Bash)."
 auto_pause
 
 # ============================================================

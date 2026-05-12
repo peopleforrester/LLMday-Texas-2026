@@ -85,7 +85,7 @@ Environment overrides:
 | `gitops/bootstrap/root-app.yaml` | The seed Application |
 | `gitops/apps/` | ArgoCD Application manifests with sync-wave annotations |
 | `gitops/values/` | Helm values per platform component, including `falco-values.yaml` (Beat 4 custom rule) and `falco-talon-values.yaml` (Beat 4 response binding) |
-| `gitops/manifests/` | Raw YAML: namespaces, Kyverno policies, Tetragon TracingPolicies, cert issuer, VAP (Beat 3), RBAC, KServe workload, model registry data, `cluster-config/` (Beat 5 vpc-cni enable), `networkpolicies/` (Beat 5 production egress allowlist) |
+| `gitops/manifests/` | Raw YAML: namespaces, Kyverno policies, Tetragon TracingPolicies, cert issuer, VAP (Beat 3), RBAC, model-server Deployment, model registry data, `cluster-config/` (Beat 5 vpc-cni enable), `networkpolicies/` (Beat 5 production egress allowlist) |
 
 ### Generated at setup time (gitignored)
 
@@ -107,7 +107,7 @@ Everything under `.local/`:
 After `provision-cluster.sh` + GitOps sync completes, the cluster has:
 
 **Enforcement / security**
-- Native Kubernetes ValidatingAdmissionPolicy (matches Deployments AND KServe InferenceServices). Demo 3.
+- Native Kubernetes ValidatingAdmissionPolicy on Deployments and pods in the production namespace. The CEL is resource-type-agnostic; the VAP also matches KServe InferenceServices by design, even though KServe isn't installed in this build (see "MLOps" below). Demo 3.
 - Kyverno with 6 baseline ClusterPolicies (Audit mode, in addition to native VAP)
 - Tetragon with 3 TracingPolicies (sigkill on shell-in-mlops; alert on IMDS access and /etc writes)
 - Falco DaemonSet for runtime detection, plus a custom rule mounted via the chart's `customRules` value that fires on shell binaries spawned inside production pods with containerd-shim as parent. Demo 4.
@@ -116,7 +116,6 @@ After `provision-cluster.sh` + GitOps sync completes, the cluster has:
 - EKS Auto Mode Network Policy Controller enabled via the `amazon-vpc-cni` ConfigMap, plus a production-namespace `NetworkPolicy` that default-denies egress and allows only DNS (via ipBlock against the cluster service CIDR) plus intra-namespace and model-registry traffic. Demo 5.
 
 **Identity / certs**
-- SPIRE server + agent (the in-cluster identity-of-record)
 - cert-manager + self-signed ClusterIssuer
 
 **Observability**
@@ -127,13 +126,12 @@ After `provision-cluster.sh` + GitOps sync completes, the cluster has:
 - EKS audit log exported to CloudWatch
 
 **MLOps**
-- KServe controller (raw deployment mode)
-- `model-server` InferenceService in `production`, sklearn iris model
+- `model-server` plain `Deployment` in `production`, running `nginxinc/nginx-unprivileged:1.27-alpine`. KServe was dropped from the GitOps tree because its Helm chart isn't published at a stable URL; raw manifests weren't justified for this demo. The narrative isn't materially affected: the agent tries to modify a Deployment in production, the gates fire. The model-server manifest documents the decision inline.
 - Kubeflow Model Registry (standalone ConfigMap state with v1.0.0 through v1.3.0)
 - Argo Workflows + a `WorkflowTemplate` named `promote-model-to-production` (verbal reference only)
 
 **GitOps**
-- ArgoCD reconciling 21 Applications via the root app-of-apps
+- ArgoCD reconciling 19 Applications via the root app-of-apps
 - `ServerSideApply=true` for Kyverno's large CRDs
 
 The audience won't see most of this UI during the 8-minute demo. They'll see that it's *there*, in `kubectl get pods -A` and ArgoCD's app list.
