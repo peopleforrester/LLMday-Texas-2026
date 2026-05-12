@@ -1,0 +1,44 @@
+driver:
+  enabled: true
+  kind: modern_ebpf
+
+tty: true
+
+falco:
+  json_output: true
+  json_include_output_property: true
+  log_level: info
+
+# Falcosidekick routes Falco events to Prometheus, Slack, etc.
+falcosidekick:
+  enabled: true
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+  webui:
+    enabled: false
+  config:
+    prometheus:
+      enabled: true
+
+falcoctl:
+  artifact:
+    install:
+      enabled: true
+    follow:
+      enabled: true
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+tolerations:
+  - operator: Exists

@@ -1,0 +1,25 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-default-deny-netpol
+  annotations:
+    policies.kyverno.io/title: Require Default-Deny NetworkPolicy in Workload Namespaces
+    policies.kyverno.io/severity: medium
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: audit-default-deny-netpol-present
+      match:
+        any:
+          - resources:
+              kinds: [Namespace]
+              names: [production, staging]
+      validate:
+        message: "Workload namespaces (production, staging) should have a default-deny NetworkPolicy."
+        deny:
+          conditions:
+            any:
+              - key: "{{ length(query_kubernetes('networking.k8s.io/v1', 'NetworkPolicy', element.metadata.name, '*').items) }}"
+                operator: Equals
+                value: 0

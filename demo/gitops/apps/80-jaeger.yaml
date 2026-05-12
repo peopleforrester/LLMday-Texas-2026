@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: jaeger
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://jaegertracing.github.io/helm-charts
+      chart: jaeger
+      targetRevision: 3.4.1
+      helm:
+        releaseName: jaeger
+        valueFiles:
+          - $values/demo/gitops/values/jaeger-values.yaml
+    - repoURL: https://github.com/peopleforrester/LLMday-Texas-2026
+      targetRevision: staging
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: jaeger
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]

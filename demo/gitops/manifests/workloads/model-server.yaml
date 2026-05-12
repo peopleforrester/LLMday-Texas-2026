@@ -1,0 +1,62 @@
+---
+# Production model-server is a real KServe InferenceService running sklearn iris.
+# KServe (RawDeployment mode) creates the backing Deployment + Service.
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: model-server
+  namespace: production
+  labels:
+    app.kubernetes.io/name: model-server
+    app.kubernetes.io/version: v1.2.0
+    app.kubernetes.io/part-of: mlops
+    app.kubernetes.io/managed-by: mlops-pipeline
+  annotations:
+    serving.kserve.io/deploymentMode: RawDeployment
+    serving.kserve.io/autoscalerClass: external
+spec:
+  predictor:
+    minReplicas: 1
+    maxReplicas: 3
+    sklearn:
+      storageUri: "gs://kfserving-examples/models/sklearn/1.0/model"
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+---
+# The "right path" WorkflowTemplate — referenced verbally in the wrap.
+# Pre-loaded into the cluster but not executed.
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: promote-model-to-production
+  namespace: argo
+spec:
+  serviceAccountName: argo-workflow
+  entrypoint: promote
+  arguments:
+    parameters:
+      - name: model-version
+        value: "v1.3.0"
+  templates:
+    - name: promote
+      steps:
+        - - name: fetch-from-registry
+            template: noop
+        - - name: run-eval-suite
+            template: noop
+        - - name: sign-artifact-cosign
+            template: noop
+        - - name: open-pr-to-gitops-prod
+            template: noop
+        - - name: notify-platform-team
+            template: noop
+    - name: noop
+      container:
+        image: alpine:3.20
+        command: [sh, -c]
+        args: ["echo 'this is a placeholder; the real workflow lives in your platform-team repo'"]

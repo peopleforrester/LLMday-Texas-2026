@@ -1,0 +1,27 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-image-registries
+  annotations:
+    policies.kyverno.io/title: Restrict Image Registries
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: check-image-registries
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [production, staging]
+      exclude:
+        any:
+          - resources:
+              namespaces: [argocd, kyverno, kube-system, cert-manager, spire-system, falco, tetragon, monitoring, jaeger, otel, loki, kserve, argo, kubeflow]
+      validate:
+        message: "Images must come from approved registries: docker.io/library, registry.k8s.io, gcr.io/kfserving-examples, ECR, GHCR."
+        pattern:
+          spec:
+            containers:
+              - image: "docker.io/library/* | registry.k8s.io/* | gcr.io/kfserving-examples/* | *.dkr.ecr.*.amazonaws.com/* | ghcr.io/* | nginxinc/* | docker.io/nginxinc/*"
