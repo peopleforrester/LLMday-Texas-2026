@@ -47,7 +47,7 @@ Top-left runs `bash demo.sh`. Other three panes start in `watch`/`tail` mode bef
 
 1. SLIDE for "Demo: three layers" visible
 2. Switch display to terminal
-3. **SAY:** *"What you're watching is a real EKS Auto Mode cluster running Kubernetes 1.33. Same configuration you'd run in production. This is also a scripted recreation: the agent dialogue is scripted so the timing matches my narration. The hooks are real. The Git rejection is real. The K8s denial is real. Let me show you."*
+3. **SAY:** *"What you're watching is a real EKS Auto Mode cluster running Kubernetes 1.35. Same configuration you'd run in production. This is also a scripted recreation: the agent dialogue is scripted so the timing matches my narration. The hooks are real. The Git rejection is real. The K8s denial is real. Let me show you."*
 4. Press SPACE to begin Beat 1
 5. Narrate **over** the agent's typing — don't read what's on screen verbatim
 6. **When the hook fires (red bold output)**, pause your narration, let the audience read, then resume:

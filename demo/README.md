@@ -8,7 +8,7 @@ The demo shows three layers of an existing MLOps pipeline catching an AI agent t
 2. **Git pre-commit hook** — rejects the agent's commit on a protected path
 3. **Kubernetes ValidatingAdmissionPolicy** — denies the agent's direct API call at the EKS API server
 
-The agent dialogue is scripted (for predictable timing on stage). The enforcement at every layer is real. The cluster is a real **Amazon EKS Auto Mode** cluster running Kubernetes 1.33.
+The agent dialogue is scripted (for predictable timing on stage). The enforcement at every layer is real. The cluster is a real **Amazon EKS Auto Mode** cluster running Kubernetes 1.35.
 
 The full build contract is at `../docs/SPEC.md` (v4.2).
 
@@ -20,7 +20,7 @@ On Megumi (the laptop you'll present from):
 
 - AWS CLI v2 configured (`aws sts get-caller-identity` returns a valid identity)
 - `eksctl >= 0.225`
-- `kubectl >= 1.33`
+- `kubectl >= 1.35`
 - `helm >= 3.18`
 - `git`, `bash`, `awk`, `jq`
 - An AWS region picked. Default: `us-east-2`.
@@ -53,7 +53,7 @@ Environment overrides:
 - `AWS_REGION` (default `us-east-2`)
 - `AWS_PROFILE`
 - `CLUSTER_NAME` (default `llmday-demo`)
-- `K8S_VERSION` (default `1.33`)
+- `K8S_VERSION` (default `1.35`)
 - `TOKEN_TTL` (default `1h`)
 - `TYPE_DELAY_MS` (default `30` — speed up typing animation for rehearsal)
 

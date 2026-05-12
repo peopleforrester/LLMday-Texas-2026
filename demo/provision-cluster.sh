@@ -8,7 +8,7 @@ DEMO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEMO_LOCAL="$DEMO_ROOT/.local"
 REGION="${AWS_REGION:-us-east-2}"
 CLUSTER_NAME="${CLUSTER_NAME:-llmday-demo}"
-K8S_VERSION="${K8S_VERSION:-1.33}"
+K8S_VERSION="${K8S_VERSION:-1.35}"
 AWS_PROFILE_FLAG=""
 if [[ -n "${AWS_PROFILE:-}" ]]; then
   AWS_PROFILE_FLAG="--profile $AWS_PROFILE"

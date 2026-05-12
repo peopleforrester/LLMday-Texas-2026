@@ -20,7 +20,7 @@ LLMday's audience is ML engineers, data engineers, and engineering managers eval
 | | v4.1 (k3d) | v4.2 (EKS Auto Mode) |
 |---|---|---|
 | Cluster platform | k3d local | Amazon EKS, Auto Mode enabled |
-| Kubernetes version | v1.35.4 | v1.33 (EKS current default) |
+| Kubernetes version | v1.35.4 | v1.35 (EKS current default as of 2026-05-12) |
 | Compute | local Docker containers | EC2 instances managed by Auto Mode (Karpenter under the hood) |
 | Node OS | k3s default | Bottlerocket (AWS-managed) |
 | Cluster bootstrap | `k3d cluster create` (~90 sec) | `eksctl create cluster --enable-auto-mode` (~12-15 min) |
@@ -32,7 +32,7 @@ LLMday's audience is ML engineers, data engineers, and engineering managers eval
 | Estimated demo cost | $0 | ~$3-5 total (cluster ~24 hr lifetime) |
 
 **Audience credibility line for the talk:**
-> "What you're watching is a real EKS Auto Mode cluster running Kubernetes 1.33. Same ValidatingAdmissionPolicy you'd configure in production. The agent is hitting the same admission webhook your cluster uses today."
+> "What you're watching is a real EKS Auto Mode cluster running Kubernetes 1.35. Same ValidatingAdmissionPolicy you'd configure in production. The agent is hitting the same admission webhook your cluster uses today."
 
 That line lands harder than "this is a local k3d cluster."
 
@@ -46,7 +46,7 @@ Before tonight's pre-provisioning:
 - `aws sts get-caller-identity` returns a valid identity
 - AWS region: `us-east-2` (Ohio — close to Austin, cheap, broadly supported)
 - `eksctl >= 0.225` installed (`eksctl version`)
-- `kubectl >= 1.33` installed
+- `kubectl >= 1.35` installed
 - `helm >= 3.18` installed (for Falco and OTel)
 - `git`, `bash`, `awk`, `jq`, `aws-vault` or `aws sso` for credential handling
 - AWS account quotas: at least 4 vCPUs available in the chosen region, EKS cluster quota not at limit
@@ -119,11 +119,11 @@ The agent dialogue is scripted. The enforcement is real. Now also: the cluster i
 
 ---
 
-## Cluster topology — EKS Auto Mode v1.33
+## Cluster topology — EKS Auto Mode v1.35
 
 **Cluster name:** `llmday-demo`
 **Region:** `us-east-2`
-**Kubernetes version:** `1.33`
+**Kubernetes version:** `1.35` (EKS current default)
 **Mode:** Auto Mode enabled (Karpenter, ALB controller, EBS CSI, EFS CSI, VPC CNI all managed by AWS)
 
 **Provisioning via eksctl** (`provision-cluster.sh`):
@@ -132,7 +132,7 @@ The agent dialogue is scripted. The enforcement is real. Now also: the cluster i
 eksctl create cluster \
   --name llmday-demo \
   --region us-east-2 \
-  --version 1.33 \
+  --version 1.35 \
   --enable-auto-mode \
   --with-oidc \
   --tags "Project=llmday-austin,Owner=mforrester,Ephemeral=true"
@@ -339,7 +339,7 @@ Cheap. Far cheaper than the cost of a bad demo. Tear down within 24 hours of pro
 
 ## During demo (additions to v4.1 runbook)
 
-- Before Beat 1 starts, briefly say: "This is a real EKS Auto Mode cluster running Kubernetes 1.33. Same configuration you'd run in production." 5 seconds. Builds credibility.
+- Before Beat 1 starts, briefly say: "This is a real EKS Auto Mode cluster running Kubernetes 1.35. Same configuration you'd run in production." 5 seconds. Builds credibility.
 - During Beat 3, when VAP fires, narrate: "That deny just hit CloudWatch. Same audit log your SIEM pulls from." Point at the bottom-right pane.
 ```
 
