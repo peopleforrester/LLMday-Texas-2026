@@ -133,6 +133,23 @@ play_dialogue() {
         _colorize_denies() {
           sed -u -E "s/(DENY|Forbidden|denied|VAP|ValidatingAdmissionPolicy|HOOK_DENY)/$(printf '\033[1;91m')\1$(printf '\033[0m')/gI"
         }
+        # Strip the boilerplate kubectl apply prints around a Forbidden:
+        # the Warning: line, the last-applied-configuration JSON patch dump,
+        # the "to:" separator, the Resource:/Name: identity lines, and the
+        # long "for: \"<path>\": error when patching \"<path>\":" prefix.
+        # What's left is the actual ValidatingAdmissionPolicy / Kyverno
+        # message the audience needs to read. The full output still
+        # reaches $_tmpout via tee, so DENY detection for the status
+        # badge still works.
+        _filter_kubectl_noise() {
+          sed -u -E \
+            -e '/^Warning:/d' \
+            -e '/^\{/d' \
+            -e '/^to:$/d' \
+            -e '/^Resource:/d' \
+            -e '/^Name:/d' \
+            -e 's|^for: "[^"]+": error when patching "[^"]+": |deny: |'
+        }
         local cmd="${line#@run }"
         # Detect a heredoc on this @run line and slurp subsequent dialogue
         # lines into the command until we hit the terminator on its own
@@ -173,7 +190,7 @@ play_dialogue() {
           local _tmpout
           _tmpout=$(mktemp)
           local _exit
-          { eval "$cmd" 2>&1 | tee "$_tmpout" | _colorize_denies; } || true
+          { eval "$cmd" 2>&1 | tee "$_tmpout" | _filter_kubectl_noise | _colorize_denies; } || true
           _exit=${PIPESTATUS[0]}
           if grep -qE "DENY|Forbidden|denied|HOOK_DENY|ValidatingAdmissionPolicy" "$_tmpout" 2>/dev/null; then
             echo -e "${BADGE_DENIED} ✗ DENIED ${RESET}"
