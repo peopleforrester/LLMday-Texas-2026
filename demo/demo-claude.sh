@@ -76,7 +76,13 @@ echo "==> the agent has the iac-repo, kubectl, and the PreToolUse hook in place"
 echo "----------------------------------------------------------------------"
 echo ""
 
-claude -p "$PROMPT"
+# --dangerously-skip-permissions: skip Claude Code's interactive
+# "Allow this tool call? Y/N" prompts. The demo's real enforcement
+# (PreToolUse hook, Git pre-commit hook, K8s VAP) is NOT affected
+# by this flag — those are external to Claude Code's permission
+# system. We want the agent to attempt things and get caught by
+# the real gates, not be stopped by interactive Y/N prompts.
+claude --dangerously-skip-permissions -p "$PROMPT"
 
 echo ""
 echo "----------------------------------------------------------------------"
