@@ -148,21 +148,30 @@ if [[ $RESUME_BEAT -le 1 ]]; then
   type_out "${DIM}Starting demo. Three beats. Scripted dialogue. Real enforcement.${RESET}" 15
   echo ""
   pause "press SPACE to begin Beat 1 — PreToolUse hook"
-
+  clear
+  print_banner
   play_dialogue "$DEMO_ROOT/dialogue/beat1-pretooluse.txt"
 fi
 
 if [[ $RESUME_BEAT -le 2 ]]; then
   echo ""
   pause "press SPACE to begin Beat 2 — Git hook"
+  clear
+  print_banner
   play_dialogue "$DEMO_ROOT/dialogue/beat2-githook.txt"
 fi
 
 if [[ $RESUME_BEAT -le 3 ]]; then
   echo ""
   pause "press SPACE to begin Beat 3 — K8s admission"
+  clear
+  print_banner
   play_dialogue "$DEMO_ROOT/dialogue/beat3-vap.txt"
 fi
 
 echo ""
 echo -e "${DIM}End of demo. Return to slides.${RESET}"
+echo ""
+# Hold the final frame so the speaker isn't dumped to the shell prompt
+# mid-thought. Press SPACE to actually exit.
+pause "press SPACE to exit the demo"

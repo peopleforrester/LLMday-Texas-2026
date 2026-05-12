@@ -41,28 +41,35 @@ roleRef:
   kind: Role
   name: claude-agent-namespace-edit
 ---
-# Read-only in production so Beat 1's `kubectl get deployments` succeeds
-# before the hook denies the write.
+# INTENTIONALLY OVERSCOPED in production: agent has full CRUD on
+# Deployments. The talk's whole point is that RBAC was misconfigured
+# this way and the SERVER-SIDE VAP is what catches the write. If we
+# gave the agent only read here, RBAC would deny Beat 3's apply
+# BEFORE the VAP could fire, and the demo's punchline would come
+# from RBAC instead of the VAP.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: claude-agent-production-read
+  name: claude-agent-production-overscoped
   namespace: production
+  annotations:
+    llmday.demo/intentionally-overscoped: "true"
+    llmday.demo/purpose: "Demo: RBAC misconfiguration. Server-side VAP is the catch."
 rules:
   - apiGroups: ["apps"]
-    resources: ["deployments"]
-    verbs: ["get", "list", "watch"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
-    resources: ["pods", "services"]
-    verbs: ["get", "list", "watch"]
+    resources: ["pods", "services", "configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["serving.kserve.io"]
     resources: ["inferenceservices"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: claude-agent-production-read
+  name: claude-agent-production-overscoped
   namespace: production
 subjects:
   - kind: ServiceAccount
@@ -71,4 +78,4 @@ subjects:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: claude-agent-production-read
+  name: claude-agent-production-overscoped

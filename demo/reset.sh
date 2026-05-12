@@ -38,11 +38,14 @@ git config core.hooksPath ".git/hooks"
 git config user.email "platform-team@example.com"
 git config user.name  "platform-team"
 git config commit.gpgsign false 2>/dev/null || true
+# Initial commit FIRST, then install hook. Hook would deny on the
+# initial commit because the template contains files under
+# infrastructure/production/.
+git add .
+git commit -q -m "initial state: model v1.2.0 in production"
 mkdir -p .git/hooks
 cp "$DEMO_LOCAL/iac-repo/hooks/pre-commit" .git/hooks/pre-commit
 chmod +x .git/hooks/pre-commit
-git add .
-git commit -q -m "initial state: model v1.2.0 in production"
 popd >/dev/null
 
 echo "==> refreshing projected token (TTL=$TOKEN_TTL)"

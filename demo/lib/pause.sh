@@ -13,9 +13,14 @@ pause() {
   echo ""
   echo -e "${DIM}[${msg}]${RESET}"
 
+  # IMPORTANT: read from /dev/tty, NOT inherited stdin. play_dialogue
+  # calls this function from inside `while ... done < "$file"`, which
+  # redirects stdin to the dialogue file. Without /dev/tty, this read
+  # would consume bytes from the dialogue file and the demo would
+  # auto-advance + skip dialogue lines.
   local key
   while true; do
-    IFS= read -rsn1 key
+    IFS= read -rsn1 key < /dev/tty
     [[ "$key" == " " ]] && break
   done
 
