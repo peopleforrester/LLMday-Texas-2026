@@ -24,6 +24,11 @@ falcosidekick:
   config:
     prometheus:
       enabled: true
+    # Forward events to Falco Talon (response engine). Talon runs as a
+    # sibling Helm release 'falco-talon' in the same namespace, listening
+    # on its ClusterIP service at port 2803. See 35-falco-talon.yaml.
+    talon:
+      address: "http://falco-talon:2803"
 
 falcoctl:
   artifact:
