@@ -9,7 +9,21 @@ export DEMO_ROOT
 
 source "$DEMO_ROOT/lib/colors.sh"
 source "$DEMO_ROOT/lib/say.sh"
-source "$DEMO_ROOT/lib/pause.sh"
+
+# Hands-free pacing: auto-advance after a few seconds, or skip ahead
+# with any keypress (NOT specifically SPACE — any key, so the one
+# hand not holding the mic can mash without aiming).
+SECTION_PAUSE="${SECTION_PAUSE:-25}"
+auto_pause() {
+  local seconds="${1:-$SECTION_PAUSE}"
+  echo ""
+  echo -e "${DIM}[advancing in ${seconds}s — or tap any key to skip]${RESET}"
+  if [[ -r /dev/tty ]]; then
+    read -t "$seconds" -rsn1 < /dev/tty 2>/dev/null || true
+  else
+    sleep "$seconds"
+  fi
+}
 
 # ============================================================
 # Helpers
@@ -51,7 +65,7 @@ echo "  Beat 1 — Claude Code PreToolUse hook (bash, on this host)"
 echo "  Beat 2 — Git pre-commit hook (bash, inside the IaC repo)"
 echo "  Beat 3 — Kubernetes ValidatingAdmissionPolicy (YAML, in the cluster)"
 echo ""
-pause "press SPACE to see Beat 1's hook"
+auto_pause 6
 
 # ============================================================
 # Beat 1 — PreToolUse hook
@@ -61,7 +75,7 @@ show_file \
   "Claude Code PreToolUse hook" \
   "$DEMO_ROOT/claude-hooks/pretool-use-block-prod.sh" \
   "Reads tool-call JSON on stdin. Exits 2 with stderr deny on three patterns: kubectl WRITE verbs against the production namespace; direct registry push; direct edits to infrastructure/production/. Registered to Claude Code via .claude/settings.json (matcher: Bash)."
-pause "press SPACE to see Beat 2's hook"
+auto_pause
 
 # ============================================================
 # Beat 2 — Git pre-commit hook
@@ -71,7 +85,7 @@ show_file \
   "Git pre-commit hook (in the IaC repo)" \
   "$DEMO_ROOT/iac-repo-template/hooks/pre-commit" \
   "Two checks. (1) Non-human committer email patterns: claude-agent, anthropic.local, @bot, agent@, noreply@. (2) Staged files under infrastructure/production/. Either check failing exits 1 with GIT_HOOK_DENY. setup.sh installs this hook into .git/hooks/ AND sets core.hooksPath so the host's global hooksPath cannot bypass it."
-pause "press SPACE to see Beat 3's policy"
+auto_pause
 
 # ============================================================
 # Beat 3 — VAP
@@ -92,4 +106,4 @@ echo -e "${DIM}  Beat 1 file:  $DEMO_ROOT/claude-hooks/pretool-use-block-prod.sh
 echo -e "${DIM}  Beat 2 file:  $DEMO_ROOT/iac-repo-template/hooks/pre-commit${RESET}"
 echo -e "${DIM}  Beat 3 file:  $DEMO_ROOT/gitops/manifests/vap/vap.yaml${RESET}"
 echo ""
-pause "press SPACE to exit"
+auto_pause 10
